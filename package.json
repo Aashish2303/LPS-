@@ -1,0 +1,35 @@
+{
+  "name": "lps",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@neondatabase/auth": "0.6.0-beta",
+    "@vercel/functions": "3.4.0",
+    "lucide-react": "1.31.0",
+    "next": "16.4.3",
+    "pg": "8.16.3",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/pg": "8.15.5",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7",
+    "esbuild": "0.28.1"
+  }
+}
