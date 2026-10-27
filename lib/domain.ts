@@ -14,21 +14,21 @@ const text=z.string().trim().min(1).max(200);
 const qty=z.number().finite().positive().max(1e9).refine(v=>Math.abs(v*1000-Math.round(v*1000))<0.0001,'Use at most three decimal places');
 const id=z.string().min(1).max(100);
 export const commandSchema=z.discriminatedUnion('type',[
- z.object({type:z.literal('settings'),name:text,code:text,client:z.string().max(200),location:z.string().max(200),start:dateSchema,finish:dateSchema,trades:z.array(text).min(1).max(50),areas:z.array(text).min(1).max(100)}),
- z.object({type:z.literal('milestone'),id:id,name:text,date:dateSchema,owner:text}),
- z.object({type:z.literal('task'),id:id,name:text,trade:text,area:text,owner:text,unit:text,total:qty,start:dateSchema,finish:dateSchema,predecessors:z.array(id).max(100),milestoneId:z.string().max(100),pull:z.boolean()}),
- z.object({type:z.literal('editTask'),task:z.object({id:id,name:text,trade:text,area:text,owner:text,unit:text,total:qty,start:dateSchema,finish:dateSchema,predecessors:z.array(id).max(100),milestoneId:z.string().max(100),pull:z.boolean()})}),
- z.object({type:z.literal('pull'),taskId:id,selected:z.boolean()}),
- z.object({type:z.literal('constraint'),id:id,taskId:id,category:text,description:text,owner:text,due:dateSchema}),
- z.object({type:z.literal('resolve'),id:id,resolution:text,date:dateSchema}),
- z.object({type:z.literal('allocate'),id:id,taskId:id,week:dateSchema,quantity:qty}),
- z.object({type:z.literal('unallocate'),id:id}),
- z.object({type:z.literal('commit'),id:id,taskId:id,week:dateSchema,quantity:qty,due:dateSchema,owner:text}),
- z.object({type:z.literal('uncommit'),id:id,week:dateSchema}),
- z.object({type:z.literal('freeze'),week:dateSchema}),
- z.object({type:z.literal('actual'),commitmentId:id,date:dateSchema,quantity:qty.or(z.literal(0)),note:z.string().max(1000)}),
- z.object({type:z.literal('variance'),commitmentId:id,reason:text,learning:text}),
- z.object({type:z.literal('close'),week:dateSchema})
+ z.strictObject({type:z.literal('settings'),name:text,code:text,client:z.string().max(200),location:z.string().max(200),start:dateSchema,finish:dateSchema,trades:z.array(text).min(1).max(50),areas:z.array(text).min(1).max(100)}),
+ z.strictObject({type:z.literal('milestone'),id:id,name:text,date:dateSchema,owner:text}),
+ z.strictObject({type:z.literal('task'),id:id,name:text,trade:text,area:text,owner:text,unit:text,total:qty,start:dateSchema,finish:dateSchema,predecessors:z.array(id).max(100),milestoneId:z.string().max(100),pull:z.boolean()}),
+ z.strictObject({type:z.literal('editTask'),task:z.strictObject({id:id,name:text,trade:text,area:text,owner:text,unit:text,total:qty,start:dateSchema,finish:dateSchema,predecessors:z.array(id).max(100),milestoneId:z.string().max(100),pull:z.boolean()})}),
+ z.strictObject({type:z.literal('pull'),taskId:id,selected:z.boolean()}),
+ z.strictObject({type:z.literal('constraint'),id:id,taskId:id,category:text,description:text,owner:text,due:dateSchema}),
+ z.strictObject({type:z.literal('resolve'),id:id,resolution:text,date:dateSchema}),
+ z.strictObject({type:z.literal('allocate'),id:id,taskId:id,week:dateSchema,quantity:qty}),
+ z.strictObject({type:z.literal('unallocate'),id:id}),
+ z.strictObject({type:z.literal('commit'),id:id,taskId:id,week:dateSchema,quantity:qty,due:dateSchema,owner:text}),
+ z.strictObject({type:z.literal('uncommit'),id:id,week:dateSchema}),
+ z.strictObject({type:z.literal('freeze'),week:dateSchema}),
+ z.strictObject({type:z.literal('actual'),commitmentId:id,date:dateSchema,quantity:qty.or(z.literal(0)),note:z.string().max(1000)}),
+ z.strictObject({type:z.literal('variance'),commitmentId:id,reason:text,learning:text}),
+ z.strictObject({type:z.literal('close'),week:dateSchema})
 ]);
 export type Command=z.infer<typeof commandSchema>;
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());

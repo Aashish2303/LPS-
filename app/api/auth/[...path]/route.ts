@@ -1,2 +1,7 @@
 import { auth } from '@/lib/auth-server';
-export const {GET,POST,PUT,DELETE,PATCH}=auth.handler();
+import {createAuthGateway} from '@/lib/auth-handler';
+export const dynamic='force-dynamic';
+export const runtime='nodejs';
+const upstream=auth.handler();
+export const GET=createAuthGateway(upstream.GET);
+export const POST=createAuthGateway(upstream.POST);
