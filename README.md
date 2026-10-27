@@ -16,7 +16,7 @@ Checks: `npm test`, `npm run check`, `npm run build`. Commit the package lock. `
 4. Allocate remaining quantities in the six-week lookahead. Add, correct or remove uncommitted forecasts.
 5. Record constraints, owners and removal dates. Resolve with evidence. Predecessor scope must be complete before a successor can be promised.
 6. Make weekly promises from allocations. Start the week to freeze its original quantity targets, due dates and denominator.
-7. Log daily incremental actuals. Saving the same commitment/date replaces that entry. Scope, other reservations and predecessor sequencing are checked on the server.
+7. This is a learning application: log daily incremental quantities for any of the seven dates in an active week, including future days, without waiting for that calendar date. Saving the same commitment/date replaces that entry. Scope, other reservations and predecessor sequencing are checked on the server.
 8. Close the week after Sunday in India time. Every missed promise needs a reason and improvement action. Closed weeks are immutable.
 9. Allocate unfinished scope to another week. Carryover never creates actual work or increases total scope.
 
@@ -53,7 +53,7 @@ Checks: `npm test`, `npm run check`, `npm run build`. Commit the package lock. `
 
 ## Verification status · 27 October 2026
 
-- Passing domain regression tests cover day corrections, decimal totals, scope overflow, duplicate promises, invalid dates, due-date PPC, binary completion, closeout requirements, frozen plans, carryover, forecast over-allocation, constraints, FS handoffs, future dates, CPM cycles/durations, separate units, year boundaries, demo integrity and forecast/activity corrections.
+- Passing domain regression tests cover day corrections, decimal totals, scope overflow, duplicate promises, invalid dates, due-date PPC, binary completion, closeout requirements, frozen plans, carryover, forecast over-allocation, constraints, FS handoffs, all seven learning dates entered in advance, CPM cycles/durations, separate units, year boundaries, demo integrity and forecast/activity corrections.
 - TypeScript and optimized Next.js builds pass.
 - Production dependency audit: zero known vulnerabilities after applying patched Zod and esbuild overrides. Auth SDK versions are pinned; its wrapper and peer APIs compile successfully.
 - Live browser demo verified that a daily addition moved weekly actual from 20 to 30 and a correction reduced it to 25, retaining one entry per day.

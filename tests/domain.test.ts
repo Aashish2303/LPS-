@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyState,applyCommand,taskActual,metrics,remaining,available,monday,sum,network,unitTotals,type State } from '../lib/domain';
+import { emptyState,applyCommand,taskActual,metrics,remaining,available,addDays,commitmentActual,monday,sum,network,unitTotals,type State } from '../lib/domain';
 import { demoState } from '../lib/demo';
 const NOW='2026-10-27',W='2026-10-19';
 function fixture(total=100):State{let s=emptyState('Test','2026-10-01');s.finish='2026-12-31';s=applyCommand(s,{type:'task',id:'a',name:'Concrete',trade:'Structure',area:'Zone A',owner:'Lead',unit:'m³',total,start:'2026-10-01',finish:'2026-12-01',predecessors:[],milestoneId:'',pull:true},NOW);return s;}
@@ -15,7 +15,7 @@ test('99 percent remains a binary miss',()=>{let s=run(promise(fixture(),W,'c',1
 test('closeout requires reason and action; closed ledger is immutable',()=>{let s=run(promise(fixture()),{type:'freeze',week:W});assert.throws(()=>run(s,{type:'close',week:W}),/reason/);s=run(s,{type:'variance',commitmentId:'c',reason:'Materials',learning:'Lead to confirm delivery on Friday'});s=run(s,{type:'close',week:W});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:W,quantity:1,note:''}),/locked/);assert.throws(()=>run(s,{type:'variance',commitmentId:'c',reason:'Other',learning:'Changed'}),/active week/);});
 test('frozen plan denominator cannot be changed',()=>{const s=run(promise(fixture()),{type:'freeze',week:W});assert.throws(()=>run(s,{type:'uncommit',id:'c',week:W}),/Frozen/);assert.throws(()=>run(s,{type:'commit',id:'c2',taskId:'a',week:W,quantity:10,due:'2026-10-23',owner:'Lead'}),/frozen/);});
 test('remaining scope carries over once, without creating actuals',()=>{let s=run(promise(fixture()),{type:'freeze',week:W});s=run(s,{type:'actual',commitmentId:'c',date:W,quantity:20,note:''});s=run(s,{type:'variance',commitmentId:'c',reason:'Weather',learning:'Replan work'});s=run(s,{type:'close',week:W});assert.equal(remaining(s,s.tasks[0]),80);s=promise(s,'2026-10-26','c2',80);assert.equal(available(s,s.tasks[0]),0);assert.equal(taskActual(s,'a'),20);s=run(s,{type:'freeze',week:'2026-10-26'});s=run(s,{type:'actual',commitmentId:'c2',date:'2026-10-26',quantity:80,note:''});assert.equal(taskActual(s,'a'),100);assert.equal(remaining(s,s.tasks[0]),0);});
-test('overallocated lookahead and future actuals rejected',()=>{let s=promise(fixture());assert.throws(()=>run(s,{type:'allocate',id:'a2',taskId:'a',week:'2026-10-26',quantity:50}),/exceed/);s=run(s,{type:'freeze',week:W});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:'2026-10-28',quantity:1,note:''}),/inside/);});
+test('overallocated lookahead and entries outside the commitment week rejected',()=>{let s=promise(fixture());assert.throws(()=>run(s,{type:'allocate',id:'a2',taskId:'a',week:'2026-10-26',quantity:50}),/exceed/);s=run(s,{type:'freeze',week:W});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:'2026-10-28',quantity:1,note:''}),/inside/);});
 test('open constraints block promises and work',()=>{let s=run(promise(fixture()),{type:'constraint',id:'k',taskId:'a',category:'Materials',description:'Delivery',owner:'Buyer',due:W});assert.throws(()=>run(s,{type:'freeze',week:W}),/no longer ready/);s=run(s,{type:'resolve',id:'k',resolution:'Delivery confirmed',date:W});s=run(s,{type:'freeze',week:W});s=run(s,{type:'constraint',id:'k2',taskId:'a',category:'Safety',description:'Permit',owner:'Lead',due:W});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:W,quantity:5,note:''}),/constraint blocks/);});
 test('CPM uses inclusive durations, critical float and cycle rejection',()=>{let s=fixture();s.tasks[0].start='2026-10-01';s.tasks[0].finish='2026-10-03';s=run(s,{type:'task',id:'b',name:'Finish',trade:'Civil',area:'Zone B',owner:'L',unit:'m²',total:5,start:'2026-10-04',finish:'2026-10-05',predecessors:['a'],milestoneId:'',pull:true});const n=network(s);assert.equal(n.a.duration,3);assert.equal(n.b.es,'2026-10-04');assert.equal(n.b.ef,'2026-10-05');assert.equal(n.a.float,0);s.tasks[0].predecessors=['b'];assert.throws(()=>network(s),/cycle/);});
 test('units are never added together',()=>{const s=fixture();s.tasks.push({...s.tasks[0],id:'b',unit:'t',total:5});assert.deepEqual(unitTotals(s).total,{'m³':100,t:5});});
@@ -23,7 +23,28 @@ test('ISO-year boundary uses real Monday dates',()=>{assert.equal(monday('2027-0
 test('demo provides valid, separate past closeout and current ledger',()=>{const s=demoState(NOW);assert.equal(s.weeks.filter(w=>w.status==='closed').length,1);assert.equal(metrics(s,s.weeks.find(w=>w.status==='closed')!).ppc,66.7);assert.equal(taskActual(s,'t1'),80);});
 test('an increase in actual cannot consume another open promise reservation',()=>{let s=promise(fixture(),W,'c',60);s=promise(s,'2026-10-26','c2',40);s=run(s,{type:'freeze',week:W});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:W,quantity:70,note:''}),/reserved/);});
 test('unfinished predecessor blocks reliable commitment',()=>{let s=fixture();s.tasks[0].finish='2026-10-10';s=run(s,{type:'task',id:'b',name:'Blockwork',trade:'Civil',area:'Zone B',owner:'Lead',unit:'m²',total:5,start:'2026-10-11',finish:'2026-12-01',predecessors:['a'],milestoneId:'',pull:true});s=run(s,{type:'allocate',id:'alb',taskId:'b',week:W,quantity:5});assert.throws(()=>run(s,{type:'commit',id:'cb',taskId:'b',week:W,quantity:5,due:'2026-10-23',owner:'Lead'}),/handoffs/);});
-test('future actual date in current week rejected',()=>{let s=promise(fixture(),'2026-10-26','c',60);s=run(s,{type:'freeze',week:'2026-10-26'});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:'2026-10-28',quantity:1,note:''}),/future/);});
+test('learning exercise accepts all seven days in advance with exact totals and replacement corrections',()=>{
+ const week='2026-10-26',now=week;
+ let s=applyCommand(promise(fixture(),week,'c',60),{type:'freeze',week},now);
+ for(let day=0;day<7;day++)s=applyCommand(s,{type:'actual',commitmentId:'c',date:addDays(week,day),quantity:(day+1)/10,note:'Learning exercise'},now);
+ assert.equal(s.entries.length,7);assert.equal(taskActual(s,'a'),2.8);
+ assert.equal(commitmentActual(s,s.weeks[0].commitments[0]),2.8);
+ assert.equal(commitmentActual(s,s.weeks[0].commitments[0],'2026-10-30'),1.5);
+ s=applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-11-01',quantity:.2,note:'Correction'},now);
+ assert.equal(s.entries.length,7);assert.equal(taskActual(s,'a'),2.3);
+ assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-10-25',quantity:1,note:''},now),/inside/);
+ assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-11-02',quantity:1,note:''},now),/inside/);
+ assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-11-01',quantity:100,note:''},now),/exceeds/);
+ assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-11-01',quantity:-1,note:''},now));
+});
+test('future-dated learning entries retain due-date PPC and closed-week protection',()=>{
+ const week='2026-10-26';let s=run(promise(fixture(),week,'c',60),{type:'freeze',week});
+ s=run(s,{type:'actual',commitmentId:'c',date:'2026-10-31',quantity:60,note:'Simulated late completion'});
+ assert.equal(taskActual(s,'a'),60);assert.equal(metrics(s,s.weeks[0]).ppc,0);
+ s=run(s,{type:'variance',commitmentId:'c',reason:'Materials',learning:'Confirm delivery earlier'});
+ s=applyCommand(s,{type:'close',week},'2026-11-02');
+ assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-10-31',quantity:50,note:''},'2026-11-02'),/locked/);
+});
 test('empty PPC denominator displays no score',()=>{assert.equal(metrics(fixture(),{key:W,status:'draft',commitments:[],frozenOn:null,closedOn:null,plannedAtFreeze:0,readyAtFreeze:0}).ppc,null);});
 test('uncommitted activity can be corrected, committed baseline stays frozen',()=>{let s=fixture();s=run(s,{type:'editTask',task:{...s.tasks[0],total:80,name:'Corrected concrete'}});assert.equal(s.tasks[0].total,80);s=promise(s);assert.throws(()=>run(s,{type:'editTask',task:{...s.tasks[0],total:100}}),/frozen/);});
 test('forecast correction replaces quantity and preserves planning origin',()=>{let s=promise(fixture());s=run(s,{type:'allocate',id:'alc',taskId:'a',week:W,quantity:70});assert.equal(s.allocations.length,1);assert.equal(s.allocations[0].quantity,70);assert.throws(()=>run(s,{type:'allocate',id:'alc',taskId:'a',week:W,quantity:50}),/draft promise/);});
