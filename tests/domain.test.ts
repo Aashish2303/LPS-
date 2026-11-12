@@ -37,12 +37,14 @@ test('learning exercise accepts all seven days in advance with exact totals and 
  assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-11-01',quantity:100,note:''},now),/exceeds/);
  assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-11-01',quantity:-1,note:''},now));
 });
-test('future-dated learning entries retain due-date PPC and closed-week protection',()=>{
+test('practice weeks can close early with future-dated entries, final PPC and locked records',()=>{
  const week='2026-10-26';let s=run(promise(fixture(),week,'c',60),{type:'freeze',week});
  s=run(s,{type:'actual',commitmentId:'c',date:'2026-10-31',quantity:60,note:'Simulated late completion'});
  assert.equal(taskActual(s,'a'),60);assert.equal(metrics(s,s.weeks[0]).ppc,0);
  s=run(s,{type:'variance',commitmentId:'c',reason:'Materials',learning:'Confirm delivery earlier'});
- s=applyCommand(s,{type:'close',week},'2026-11-02');
+ s=applyCommand(s,{type:'close',week},'2026-10-27');
+ assert.equal(s.weeks[0].closedOn,'2026-10-27');
+ assert.equal(metrics(s,s.weeks[0]).ppc,0);
  assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-10-31',quantity:50,note:''},'2026-11-02'),/locked/);
 });
 test('empty PPC denominator displays no score',()=>{assert.equal(metrics(fixture(),{key:W,status:'draft',commitments:[],frozenOn:null,closedOn:null,plannedAtFreeze:0,readyAtFreeze:0}).ppc,null);});

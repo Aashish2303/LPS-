@@ -234,7 +234,6 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
  case 'close':{
   const w=getWeek(s,c.week);
   requireThat(w.status==='active','Only an active week can be closed');
-  requireThat(addDays(w.key,6)<now,'Close the week after Sunday; live PPC remains a preview until then');
   const missed=w.commitments.filter(k=>scaled(commitmentActual(s,k,k.due))<scaled(k.quantity));
   const byId=new Map(missed.map(k=>[k.id,k]));
   const evaluated=new Set<string>();

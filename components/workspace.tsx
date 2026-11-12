@@ -262,7 +262,7 @@ type CloseoutReason={commitmentId:string;reason:string;reasonNote:string;learnin
 function Closeout({state,week,weekKey,canEdit,busy,confirm}:{
  state:State;week?:Week;weekKey:string;canEdit:boolean;busy:boolean;confirm:(reasons:CloseoutReason[])=>void;
 }){
- const active=week?.status==='active',ended=addDays(weekKey,6)<today();
+ const active=week?.status==='active';
  const score=week?metrics(state,week).ppc:null;
  const misses=week?.commitments.filter(c=>commitmentActual(state,c,c.due)<c.quantity)??[];
  return <>
@@ -273,7 +273,7 @@ function Closeout({state,week,weekKey,canEdit,busy,confirm}:{
   {!week&&<Empty title="No weekly plan to close" detail="Choose a week with promises in Weekly work plan."/>}
   {week&&<form onSubmit={e=>{
    e.preventDefault();
-   if(!active||!canEdit||busy||!ended)return;
+   if(!active||!canEdit||busy)return;
    const data=new FormData(e.currentTarget);
    confirm(misses.map(c=>({commitmentId:c.id,reason:formText(data,'reason-'+c.id),reasonNote:formText(data,'note-'+c.id),learning:formText(data,'action-'+c.id)})));
   }}>
@@ -302,9 +302,8 @@ function Closeout({state,week,weekKey,canEdit,busy,confirm}:{
      </div>}
     </section>;
    })}
-   {active&&<div className="closefooter"><p><Lock size={15}/> Closeout locks the weekly record and updates trends.</p>
-    <button className="primary" disabled={!canEdit||busy||!ended}><Lock size={15}/>Close week</button>
-    {!ended&&<small>Available after Sunday, {df(addDays(weekKey,6))} (India time).</small>}
+   {active&&<div className="closefooter"><p><Lock size={15}/> You can close a practice week as soon as you have recorded its results. Saving locks the week and updates trends.</p>
+    <button className="primary" disabled={!canEdit||busy}><Lock size={15}/>Close week</button>
    </div>}
   </form>}
  </>;
