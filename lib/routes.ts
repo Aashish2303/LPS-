@@ -1,4 +1,4 @@
-export const views=['overview','master','pull','lookahead','constraints','weekly','daily','closeout','analytics','academy','settings'] as const;
+export const views=['overview','phase','lookahead','constraints','weekly','daily','closeout','analytics','academy','settings'] as const;
 export type View=typeof views[number];
 export const authPaths={login:'/login',register:'/signup',reset:'/forgot-password','reset-confirm':'/reset-password',verify:'/verify-email'} as const;
 export type AuthMode=keyof typeof authPaths;
@@ -8,6 +8,9 @@ export function parseRoute(path:string):AppRoute|null{
  if(path==='/')return {kind:'home'};
  for(const [mode,pathname] of Object.entries(authPaths))if(path===pathname)return {kind:'auth',mode:mode as AuthMode};
  const parts=path.split('/').filter(Boolean);
+ const section=parts.at(-1);
+ if(section==='master')parts[parts.length-1]='phase';
+ if(section==='pull')parts[parts.length-1]='lookahead';
  if(parts[0]==='demo'&&parts.length===2&&views.includes(parts[1] as View))return {kind:'demo',view:parts[1] as View};
  if(parts[0]==='projects'&&parts.length===3&&uuid.test(parts[1])&&views.includes(parts[2] as View))return {kind:'project',projectId:parts[1],view:parts[2] as View};
  return null;

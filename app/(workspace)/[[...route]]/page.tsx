@@ -6,6 +6,10 @@ export default async function Page({params,searchParams}:{params:Promise<{route?
  const {route:segments=[]}=await params,path='/'+segments.join('/'),route=parseRoute(path),query=await searchParams;
  if(!route)notFound();
  if(route.kind==='home'&&query.demo==='1')redirect('/demo/overview');
+ if(route.kind==='demo'||route.kind==='project'){
+  const canonical=route.kind==='demo'?'/demo/'+route.view:'/projects/'+route.projectId+'/'+route.view;
+  if(path!==canonical)redirect(canonical+(typeof query.week==='string'&&validWeek(query.week)?'?week='+query.week:''));
+ }
  if(route.kind==='project'||route.kind==='auth'){
   const {data:session}=await auth.getSession();
   if(route.kind==='project'&&!session?.user){const week=typeof query.week==='string'&&validWeek(query.week)?'?week='+query.week:'';redirect('/login?next='+encodeURIComponent(path+week));}

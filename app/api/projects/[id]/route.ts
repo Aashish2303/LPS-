@@ -21,8 +21,6 @@ export async function POST(req:Request,ctx:Context){let client;try{
   await client.query('insert into lps_members(project_id,email,role) values($1,$2,$3) on conflict(project_id,email) do update set role=excluded.role',[id,m.email.toLowerCase(),m.role]);
  }else if(command?.type==='removeMember'){
   if(p.role!=='owner')throw new DomainError('Only the project owner can manage access',403);await client.query('delete from lps_members where project_id=$1 and email=$2',[id,command.email]);
- }else if(command?.type==='importTasks'){
-  for(const task of command.tasks)state=applyCommand(state,task);
  }else state=applyCommand(p.state,request.command);
  await client.query('update lps_projects set state=$1,version=version+1,updated_at=now() where id=$2',[JSON.stringify(state),id]);
  await client.query('insert into lps_events(id,project_id,actor_id,command,version) values($1,$2,$3,$4,$5)',[request.requestId,id,u.id,JSON.stringify(command),p.version+1]);await client.query('commit');return Response.json({state,version:p.version+1},{headers:privateHeaders});

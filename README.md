@@ -10,15 +10,16 @@ Checks: `npm test`, `npm run check`, `npm run build`. Commit the package lock. `
 
 ## Planning flow
 
-1. Create an account and a private project. Set project dates, trades and areas.
-2. Add milestones and activity quantities with units, baseline dates and predecessor IDs. CSV schedule imports validate atomically, up to 500 rows. Add predecessor rows before successors. Native XLSX import is not included.
-3. Select activities in pull planning. Identify handoffs in the phase register.
-4. Allocate remaining quantities in the six-week lookahead. Add, correct or remove uncommitted forecasts.
-5. Record constraints, owners and removal dates. Resolve with evidence. Predecessor scope must be complete before a successor can be promised.
-6. Make weekly promises from allocations. Start the week to freeze its original quantity targets, due dates and denominator.
-7. This is a learning application: log daily incremental quantities for any of the seven dates in an active week, including future days, without waiting for that calendar date. Saving the same commitment/date replaces that entry. Scope, other reservations and predecessor sequencing are checked on the server.
-8. Close the week after Sunday in India time. Every missed promise needs a reason and improvement action. Closed weeks are immutable.
-9. Allocate unfinished scope to another week. Carryover never creates actual work or increases total scope.
+1. Create a private project and open **Phase Plan**. Use **CSV template** to download a model with dates, float, predecessors and an example constraint.
+2. Import the CSV. Imports are atomic, accept up to 500 activities per file, and reject duplicate IDs and invalid dependencies. The earliest early start and latest late finish across the phase schedule set the project dates. Where a late finish is missing, the early finish is used.
+3. Open **Lookahead**. The next six weeks automatically show the quantities scheduled within each activity’s inclusive early date range. The split uses calendar-day overlap and integer thousandths so the weeks add up to the original scope. A week following closeout includes the remaining scope due by its end, after deducting the actual quantity recorded through the preceding Sunday.
+4. Add or review constraints in Lookahead and resolve them with evidence in the Constraint log. Open constraints block the activity and all its downstream dependencies. Predecessor handoffs must also be complete before a successor can be promised.
+5. Review **Weekly work plan**, select ready work, confirm the promised quantity and due date, then start the week. This freezes the promises and the forecast used for readiness metrics.
+6. In **Daily check-in**, enter the quantity completed on each date in the active week, including future dates for exercises. Saving the same commitment/date replaces the previous entry. Weekly and cumulative actuals derive from that ledger.
+7. After Sunday in India time, choose a primary reason code and an improvement action for each missed promise. RC-16 also requires a reason note. **Save & lock week** records the reasons and closes the week in one transaction.
+8. **Trends & metrics** shows the weekly PPC line and results table, activity results for the selected week, and the distribution and top three reasons for missed promises in closed weeks.
+
+The CSV template uses `id,name,trade,area,owner,unit,total,early_start,early_finish,late_start,late_finish,float,predecessors,constraints,constraint_category,constraint_owner,constraint_due`. Use ISO dates and separate predecessor IDs or multiple constraint descriptions with `|`. Legacy headers such as `Sl. No.`, `EPS`, `EPF`, `LPS`, `LPF`, `Quantity` and `UOM` are accepted. Older CSVs using `start` and `finish` still import. The signed float in the CSV is preserved when supplied.
 
 ## Measurement conventions
 
@@ -28,7 +29,7 @@ Checks: `npm test`, `npm run check`, `npm run build`. Commit the package lock. `
 - Project reliability uses total on-time completions / total frozen commitments across closed weeks, not a mean of percentages.
 - TA here is the proportion of weekly promises whose allocation was first created before the week began. TMR is ready allocated activities / all allocated activities, snapshotted when the week starts. Confirm these operational definitions against the professor’s research protocol.
 - CPM is computed from activity durations, project start, and finish-to-start, zero-lag dependencies. Calendar days are inclusive. Early/late CPM dates are displayed separately from the entered baseline. Resource levelling, work calendars, holidays, SS/FF dependencies and lag are not implemented.
-- Ready means pull-planned, positive remaining scope, no unresolved constraints and completed predecessor scope. Handoffs require completion before the successor’s actual date.
+- Ready means positive remaining scope, no unresolved constraints on the activity or its predecessors, and completed predecessor scope. Handoffs require completion before the successor’s actual date.
 - Activity baseline and scope can be edited before forecasts or promises exist. Once promised, those fields are frozen. Scope-change/rebaseline management is a future workflow.
 
 ## Access and consistency
