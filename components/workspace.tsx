@@ -4,7 +4,7 @@ import { useEffect,useRef,useState,useMemo,type FormEvent,type ReactNode } from 
 import { LayoutDashboard,Flag,CalendarRange,Handshake,ClipboardCheck,ShieldCheck,ChartNoAxesCombined,BookOpen,Settings,Plus,ArrowUpRight,ArrowRight,ChevronLeft,ChevronRight,Search,Download,Upload,RefreshCw,LogOut,X,Check,Lock,AlertTriangle,Menu,Layers,Building2,CheckCircle2,Clock3,MoreHorizontal,Users,Activity } from 'lucide-react';
 import {getAuthClient} from '@/lib/load-auth-client';
 import {preparePlanningState} from '@/lib/planning-index';
-import { addDays,applyCommand,available,blockers,commitmentActual,findTask,fmt,forecastDue,metrics,monday,network,pct,ready,remaining,sum,taskActual,today,unitTotals,weekAllocations,projectWeek,calendarAnchor,currentExerciseWeek,weekNumber,dailyCursor,dayComplete,type State,type Task,type Week,type Command } from '@/lib/domain';
+import { addDays,applyCommand,available,weeklyCandidates,blockers,commitmentActual,findTask,fmt,forecastDue,metrics,monday,network,pct,ready,remaining,sum,taskActual,today,unitTotals,weekAllocations,projectWeek,calendarAnchor,currentExerciseWeek,weekNumber,dailyCursor,dayComplete,type State,type Task,type Week,type Command } from '@/lib/domain';
 import { demoState } from '@/lib/demo';
 import Brand from './brand';
 import {usePathname,useRouter,useSearchParams} from 'next/navigation';
@@ -92,9 +92,10 @@ export default function Workspace(){
  function navigate(key:string,id=projectId){setQuery('');setMobile(false);const target=key==='analytics'?week:defaultWeek;changeView((demo?'/demo/'+key:projectPath(id,key))+'?week='+target);}
  function afterCommand(command:unknown,next:State){
   const type=(command as {type:string}).type;
-  if(type==='close'||type==='importTasks'){
+  if(type==='close'||type==='importTasks'||type==='reopenEmptyWeek'){
    const key=currentExerciseWeek(next);
-   changeView((demo?'/demo/lookahead':projectPath(projectId,'lookahead'))+'?week='+key);
+   const view=type==='reopenEmptyWeek'?'weekly':'lookahead';
+   changeView((demo?'/demo/'+view:projectPath(projectId,view))+'?week='+key);
   }
  }
  async function send(command:unknown):Promise<boolean>{if(!state||busyRef.current)return false;if(!canEdit){notify('This project is view only.',true);return false;}busyRef.current=true;setBusy(true);try{
@@ -125,12 +126,12 @@ export default function Workspace(){
  function commitForm(task:Task,quantity:number){
   const due=forecastDue(task,week);
   setDialog({
-   title:'Make a weekly promise',subtitle:task.name+' · '+fmt(quantity)+' '+task.unit+' for '+dateRange(week),
+   title:'Commit activity for this week',subtitle:task.name+' · '+fmt(quantity)+' '+task.unit+' for '+dateRange(week),
    fields:[
     {name:'due',label:'Promise due date',type:'date',value:due,min:task.start>week?task.start:week,max:due,required:true},
-    {name:'owner',label:'Person making the promise',value:task.owner,required:true},
+    {name:'owner',label:'Person making the commitment',value:task.owner,required:true},
    ],
-   submit:'Add promise',action:d=>send({type:'commit',id:uid(),taskId:task.id,week,
+   submit:'Confirm commitment',action:d=>send({type:'commit',id:uid(),taskId:task.id,week,
     quantity,due:formText(d,'due'),owner:formText(d,'owner')}),
   });
  }
@@ -189,12 +190,13 @@ export default function Workspace(){
     </tr>;
    })}</tbody></table></div></>:<Empty title="Import your phase schedule" detail="Start with the CSV template or import your own activity schedule."/>}
  </Panel>}
- {view==='lookahead'&&<Lookahead state={state} week={week} canEdit={canEdit&&!busy} addConstraint={constraintForm} openPhase={()=>navigate('phase')} openWeekly={()=>navigate('weekly')}/>}
+ {view==='lookahead'&&<Lookahead state={state} week={week} canEdit={canEdit&&!busy} addConstraint={constraintForm} commit={commitForm} openPhase={()=>navigate('phase')} openWeekly={()=>navigate('weekly')}/>}
  {view==='constraints'&&<><div className="stats three"><Stat label="Open constraints" value={state.constraints.filter(c=>!c.resolvedOn).length} detail="Need an owner’s next action" icon={<ShieldCheck size={18}/>}/><Stat label="Overdue" value={state.constraints.filter(c=>!c.resolvedOn&&c.due<today()).length} detail="Removal date has passed" icon={<AlertTriangle size={18}/>}/><Stat label="Resolved" value={state.constraints.filter(c=>c.resolvedOn).length} detail="Handoffs made possible" icon={<CheckCircle2 size={18}/>}/></div><Panel title="Constraint register" detail="Resolve a blocker with evidence, not just a tick.">{state.constraints.length?<div className="tablewrap"><table><thead><tr><th>Constraint</th><th>Activity</th><th>Owner</th><th>Required by</th><th>Exercise week</th><th>Status</th><th/></tr></thead><tbody>{[...state.constraints].sort((a,b)=>Number(!!a.resolvedOn)-Number(!!b.resolvedOn)||a.due.localeCompare(b.due)).map(c=><tr key={c.id}><td><strong>{c.description}</strong><small>{c.category}</small>{c.resolvedOn&&<small>{c.resolution}</small>}</td><td>{findTask(state,c.taskId).name}</td><td>{c.owner}</td><td>{df(c.due)}</td><td>{c.week?'Week '+weekNumber(state,c.week):'All weeks'}</td><td><Badge tone={c.resolvedOn?'teal':c.due<today()?'red':'amber'}>{c.resolvedOn?'Resolved':c.due<today()?'Overdue':'Open'}</Badge></td><td>{!c.resolvedOn&&<button disabled={!canEdit||busy} onClick={()=>setDialog({title:'Resolve constraint',subtitle:c.description,fields:[{name:'resolution',label:'Resolution / evidence',required:true},{name:'date',label:'Resolved on',type:'date',value:c.week??week,required:true}],submit:'Mark resolved',action:d=>send({type:'resolve',id:c.id,resolution:formText(d,'resolution'),date:formText(d,'date')})})}><Check size={14}/>Resolve</button>}</td></tr>)}</tbody></table></div>:<Empty title="No constraints recorded" detail="Check drawings, materials, people, equipment, access, safety and predecessor handoffs." action={<button disabled={!canEdit||!state.tasks.length} onClick={()=>constraintForm()}>Raise a constraint</button>}/>}</Panel></>}
  {view==='weekly'&&<>
-  <div className="cyclebanner"><div><Badge tone={currentWeek?.status==='closed'?'neutral':'teal'}>{currentWeek?.status??'draft'}</Badge><strong>{dateRange(week)}</strong><p>{currentWeek?.status==='active'?'Promises are frozen. Record actual work in Daily check-in.':currentWeek?.status==='closed'?'This week is closed. Promises and entries are locked.':'Choose ready activities below. Start the week to freeze the promises.'}</p></div>
-   <div className="actions">{(!currentWeek||currentWeek.status==='draft')&&<button className="primary" disabled={!canEdit||busy} onClick={()=>setDialog({title:'Start and freeze this week?',subtitle:'The original quantities, due dates and PPC denominator will be locked.',fields:[],submit:'Start week & lock promises',action:()=>send({type:'freeze',week})})}><Lock size={15}/>Start week</button>}
-   {currentWeek?.status==='active'&&<button className="primary" onClick={()=>navigate('daily')}>Daily check-in <ArrowRight size={16}/></button>}</div>
+  <div className="cyclebanner"><div><Badge tone={currentWeek?.status==='closed'?'neutral':'teal'}>{currentWeek?.status??'draft'}</Badge><strong>{dateRange(week)}</strong><p>{currentWeek?.status==='active'?(currentWeek.commitments.length?'Commitments are frozen. Record actual work in Daily check-in.':'No activities are committed. Return to planning to choose activities for this week.'):currentWeek?.status==='closed'?'This week is closed. Promises and entries are locked.':'1. Commit activities below → 2. Start week → 3. Daily check-in. '+(currentWeek?.commitments.length??0)+' activities committed.'}</p></div>
+   <div className="actions">{(!currentWeek||currentWeek.status==='draft')&&<button className="primary" disabled={!canEdit||busy||!currentWeek?.commitments.length} onClick={()=>setDialog({title:'Start and freeze this week?',subtitle:'The original quantities, due dates and PPC denominator will be locked.',fields:[],submit:'Start week & lock promises',action:()=>send({type:'freeze',week})})}><Lock size={15}/>Start week</button>}
+   {(!currentWeek||currentWeek.status==='draft')&&!currentWeek?.commitments.length&&!weeklyCandidates(state,week).some(a=>a.eligible)&&<button disabled={!canEdit||busy} onClick={()=>setDialog({title:'Start a no-work teaching week?',subtitle:'Use this only when no activities can be committed. PPC will be shown as not applicable.',fields:[{name:'reason',label:'Why can no work be committed?',required:true}],submit:'Start no-work week',action:d=>send({type:'freeze',week,emptyReason:formText(d,'reason')})})}>No work can be committed</button>}
+   {currentWeek?.status==='active'&&(currentWeek.commitments.length?<button className="primary" onClick={()=>navigate('daily')}>Daily check-in <ArrowRight size={16}/></button>:<button className="primary" disabled={!canEdit||busy} onClick={()=>send({type:'reopenEmptyWeek',week})}>Return to weekly planning</button>)}</div>
   </div>
   {(!currentWeek||currentWeek.status==='draft')&&<WeeklyReady state={state} week={week} canEdit={canEdit&&!busy} add={commitForm} openLookahead={()=>navigate('lookahead')}/>}
   <CommitmentTable state={state} week={currentWeek} action={c=>currentWeek?.status==='draft'?<button disabled={!canEdit||busy} onClick={()=>send({type:'uncommit',week,id:c.id})}>Remove</button>:null}/>
@@ -236,9 +238,11 @@ function Overview({s,current,week,navigate}:{s:State;current?:Week;week:string;n
 
 }
 function CommitmentTable({state,week,action}:{state:State;week?:Week;action:(c:Week['commitments'][number])=>ReactNode}){return <Panel title="Weekly commitment register" detail="One promise per activity per week. Completion is counted as a binary outcome.">{week?.commitments.length?<div className="tablewrap"><table><thead><tr><th>Activity</th><th>Last planner</th><th>Promised</th><th>Actual by due date</th><th>Due</th><th>Status</th><th/></tr></thead><tbody>{week.commitments.map(c=>{const t=findTask(state,c.taskId),a=commitmentActual(state,c,c.due);return <tr key={c.id}><td><strong>{t.name}</strong><small>{t.trade} · {t.area}</small></td><td>{c.owner}</td><td>{fmt(c.quantity)} {t.unit}</td><td>{fmt(a)} {t.unit}</td><td>{df(c.due)}</td><td><Badge tone={a>=c.quantity?'teal':c.due<today()?'amber':'neutral'}>{week.status==='draft'&&!ready(state,t,c.due)?'Blocked':a>=c.quantity?'Met':c.due<today()?'Missed':'Pending'}</Badge></td><td>{action(c)}</td></tr>})}</tbody></table></div>:<Empty title="No promises yet" detail="Select an eligible activity from the ready work above."/>}</Panel>}
-function Lookahead({state,week,canEdit,addConstraint,openPhase,openWeekly}:{
- state:State;week:string;canEdit:boolean;addConstraint:(task:Task,week:string)=>void;openPhase:()=>void;openWeekly:()=>void;
+function Lookahead({state,week,canEdit,addConstraint,commit,openPhase,openWeekly}:{
+ state:State;week:string;canEdit:boolean;addConstraint:(task:Task,week:string)=>void;commit:(task:Task,quantity:number)=>void;openPhase:()=>void;openWeekly:()=>void;
 }){
+ const current=state.weeks.find(w=>w.key===week),draft=!current||current.status==='draft';
+ const eligible=new Set(weeklyCandidates(state,week).filter(a=>a.eligible).map(a=>a.task.id));
  const weeks=useMemo(()=>Array.from({length:6},(_,i)=>{
   const key=addDays(week,i*7);
   const activities=weekAllocations(state,key).filter(a=>a.quantity>0)
@@ -261,7 +265,7 @@ function Lookahead({state,week,canEdit,addConstraint,openPhase,openWeekly}:{
        <dl className="forecastfacts"><div><dt>Planned quantity</dt><dd className="forecastquantity">{fmt(allocation.quantity)} <span>{task.unit}</span></dd></div><div><dt>Remaining scope</dt><dd>{fmt(left)} <span>{task.unit}</span></dd></div><div><dt>Target finish</dt><dd>{df(forecastDue(task,key))}</dd></div>{task.schedule?.float!==undefined&&<div><dt>Schedule float</dt><dd>{fmt(task.schedule.float)} <span>days</span></dd></div>}</dl>
        {!!allocation.carry&&<p className="forecastcarry">Includes {fmt(allocation.carry)} {task.unit} carryover</p>}
        {!!issues.length&&<div className="forecastconstraints"><ul aria-label="Open constraints and handoffs">{issues.map((issue,i)=><li key={i}>{issue}</li>)}</ul></div>}
-       <footer className="forecastcardfoot"><span className="forecastowner"><Users size={13}/><span>{task.owner}</span></span><button className="textbutton forecastadd" disabled={!canEdit||state.weeks.some(w=>w.key===key&&w.status==='closed')} aria-label={'Constraint for '+task.name+' week '+weekNumber(state,key)} onClick={()=>addConstraint(task,key)}><Plus size={14}/>Add constraint</button></footer>
+       <footer className="forecastcardfoot"><span className="forecastowner"><Users size={13}/><span>{task.owner}</span></span>{key===week&&draft&&(current?.commitments.some(c=>c.taskId===task.id)?<Badge tone="teal">Committed</Badge>:eligible.has(task.id)&&<button className="primary" disabled={!canEdit} aria-label={'Commit '+task.name+' for this week'} onClick={()=>commit(task,allocation.quantity)}>Commit for this week</button>)}<button className="textbutton forecastadd" disabled={!canEdit||state.weeks.some(w=>w.key===key&&w.status==='closed')} aria-label={'Constraint for '+task.name+' week '+weekNumber(state,key)} onClick={()=>addConstraint(task,key)}><Plus size={14}/>Add constraint</button></footer>
       </article>)}</div>:<p className="laneempty">{lane==='Blocked'?'No blocked activities.':'No ready activities yet.'}</p>}
      </section>;
     })}
@@ -273,22 +277,16 @@ function Lookahead({state,week,canEdit,addConstraint,openPhase,openWeekly}:{
 function WeeklyReady({state,week,canEdit,add,openLookahead}:{
  state:State;week:string;canEdit:boolean;add:(task:Task,quantity:number)=>void;openLookahead:()=>void;
 }){
- const committed=new Set(state.weeks.find(w=>w.key===week)?.commitments.map(c=>c.taskId));
- const forecast=weekAllocations(state,week).filter(a=>!committed.has(a.taskId));
- const candidates=forecast.map(a=>{
-  const task=findTask(state,a.taskId);
-  return {task,quantity:a.quantity,due:forecastDue(task,week)};
- }).filter(({task,quantity,due})=>quantity>0&&quantity<=available(state,task)&&ready(state,task,due));
- const unavailable=forecast.length-candidates.length;
- return <Panel title="Ready work from Lookahead" detail={unavailable?unavailable+' forecast '+(unavailable===1?'activity is':'activities are')+' blocked or have no available quantity.':'Each promise uses the full forecast quantity. Confirm the due date and person responsible.'} action={<button onClick={openLookahead}>Review Lookahead</button>}>
+ const candidates=weeklyCandidates(state,week);
+ return <Panel title="Commit activities for this week" detail="Confirm each activity before starting the week. The full forecast quantity becomes your fixed weekly commitment." action={<button onClick={openLookahead}>Review Lookahead</button>}>
   {candidates.length?<div className="tablewrap"><table>
-   <thead><tr><th>Activity</th><th>Available to promise</th><th>Suggested due</th><th/></tr></thead>
-   <tbody>{candidates.map(({task,quantity,due})=><tr key={task.id}>
-    <td><strong>{task.name}</strong><small>{task.trade} · {task.area}</small></td>
+   <thead><tr><th>Activity</th><th>Weekly quantity</th><th>Due</th><th>Commitment</th></tr></thead>
+   <tbody>{candidates.map(({task,quantity,due,issues,eligible})=><tr key={task.id}>
+    <td><strong>{task.name}</strong><small>{task.trade} · {task.area}</small>{issues.map((issue,i)=><small key={i}>{issue}</small>)}</td>
     <td>{fmt(quantity)} {task.unit}</td><td>{df(due)}</td>
-    <td><button disabled={!canEdit} aria-label={'Add promise for '+task.name} onClick={()=>add(task,quantity)}>Add promise</button></td>
+    <td><button disabled={!canEdit||!eligible} aria-label={'Commit activity '+task.name} onClick={()=>add(task,quantity)}>{eligible?'Commit activity':'Clear constraints first'}</button></td>
    </tr>)}</tbody>
-  </table></div>:<Empty title="No additional ready work" detail="Review forecast quantities, predecessor handoffs and constraints in Lookahead."/>}
+  </table></div>:<Empty title="No additional activities to commit" detail="Committed activities appear below. If none are committed, review the phase dates and Lookahead constraints."/>}
  </Panel>;
 }
 

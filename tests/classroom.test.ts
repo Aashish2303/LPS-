@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {applyCommand,emptyState,addDays,currentExerciseWeek,calendarAnchor,weekNumber,weekAllocations,projectWeek,taskActual,metrics,blockers,classroomState,sum,type State} from '../lib/domain';
+import {applyCommand,emptyState,addDays,currentExerciseWeek,calendarAnchor,weekNumber,weekAllocations,projectWeek,taskActual,metrics,blockers,classroomState,sum,dayComplete,weeklyCandidates,type State} from '../lib/domain';
 import {parsePhaseCsv} from '../lib/phase-csv';
 const start='2027-02-02'; // Tuesday, deliberately in the future relative to the exercise clock.
 const now='2026-11-22';
@@ -70,10 +70,47 @@ test('two simulated future weeks carry scope once, advance automatically and pre
 
 test('a fully blocked or empty teaching week can start and close without fabricated PPC',()=>{
  let s=fixture();s=run(s,{type:'constraint',id:'k',taskId:'A',week:start,category:'Safety',description:'Permit missing',owner:'Lead',due:start});
- s=run(s,{type:'freeze',week:start});s=run(s,{type:'close',week:start});assert.equal(metrics(s,s.weeks[0]).ppc,null);assert.equal(currentExerciseWeek(s),addDays(start,7));
+ s=run(s,{type:'constraint',id:'k2',taskId:'B',week:start,category:'Safety',description:'Permit missing',owner:'Lead',due:start});
+ s=run(s,{type:'freeze',week:start,emptyReason:'Both trades await permits'});assert.equal(s.weeks[0].noWorkReason,'Both trades await permits');s=run(s,{type:'close',week:start});assert.equal(metrics(s,s.weeks[0]).ppc,null);assert.equal(currentExerciseWeek(s),addDays(start,7));
 });
 
 test('legacy upgrade preserves closed calendars and makes active day reasoning mandatory',()=>{
  const s=emptyState('Old','2026-10-01');s.weeks=[{key:'2026-10-05',status:'closed',commitments:[],frozenOn:'2026-10-05',closedOn:'2026-10-06',readyAtFreeze:0,plannedAtFreeze:0},{key:'2026-10-12',status:'active',commitments:[],frozenOn:'2026-10-12',closedOn:null,readyAtFreeze:0,plannedAtFreeze:0}];
  const upgraded=classroomState(s);assert.equal(upgraded.calendarStart,'2026-10-05');assert.equal(upgraded.weeks[1].dailyReasonsRequired,true);assert.deepEqual(upgraded.weeks[0],s.weeks[0]);assert.equal(s.classroom,undefined);
+});
+
+
+test('empty start is rejected atomically and cannot bypass ready commitments with a no-work reason',()=>{
+ const s=fixture(),before=structuredClone(s);
+ assert.throws(()=>run(s,{type:'freeze',week:start}),/Commit at least one activity/);
+ assert.throws(()=>run(s,{type:'freeze',week:start,emptyReason:'Skipped planning'}),/Ready activities are available/);
+ assert.deepEqual(s,before);
+ assert.equal(weeklyCandidates(s,start).filter(a=>a.eligible).length,2);
+});
+
+function legacyEmptyActive(){const s=fixture();s.weeks.push({key:start,status:'active',commitments:[],frozenOn:now,closedOn:null,readyAtFreeze:2,plannedAtFreeze:2,plan:weekAllocations(s,start),dailyDate:addDays(start,1),dailyReasonsRequired:true});return s;}
+
+test('an empty active week returns to the same planning week and can commit, start and check in',()=>{
+ let s=legacyEmptyActive();const original=structuredClone(s);
+ assert.equal(dayComplete(s,s.weeks[0],start),false);
+ assert.throws(()=>run(s,{type:'selectDay',week:start,date:addDays(start,1)}),/commit activities/);
+ s=run(s,{type:'reopenEmptyWeek',week:start});
+ assert.equal(s.weeks[0].status,'draft');assert.equal(currentExerciseWeek(s),start);assert.equal(s.weeks[0].plan,undefined);assert.equal(s.weeks[0].frozenOn,null);assert.equal(s.weeks[0].dailyDate,undefined);
+ assert.deepEqual(s.tasks,original.tasks);assert.deepEqual(s.constraints,original.constraints);assert.deepEqual(s.entries,[]);
+ s=promiseAll(s);s=recordDay(s,start,[.1,.2]);s=run(s,{type:'selectDay',week:start,date:addDays(start,1)});s=recordDay(s,addDays(start,1),[.3,.4]);
+ assert.equal(taskActual(s,'A'),.4);assert.equal(taskActual(s,'B'),.6);
+});
+
+test('empty-week recovery protects entries, committed weeks and closed history',()=>{
+ const nonempty=promiseAll(fixture());assert.throws(()=>run(nonempty,{type:'reopenEmptyWeek',week:start}),/without commitments/);
+ const closed=legacyEmptyActive();closed.weeks[0].status='closed';assert.throws(()=>run(closed,{type:'reopenEmptyWeek',week:start}),/without commitments/);
+ for(const quantity of [0,1]){const s=legacyEmptyActive();s.entries.push({commitmentId:'legacy-orphan',date:start,quantity,note:''});const before=structuredClone(s);assert.throws(()=>run(s,{type:'reopenEmptyWeek',week:start}),/recorded entries/);assert.deepEqual(s,before);}
+ let s=legacyEmptyActive();s.weeks.unshift({key:addDays(start,-7),status:'closed',commitments:[],frozenOn:now,closedOn:now,readyAtFreeze:0,plannedAtFreeze:0});
+ const history=structuredClone(s.weeks[0]);s=run(s,{type:'reopenEmptyWeek',week:start});assert.deepEqual(s.weeks[0],history);
+});
+
+test('blocked candidates remain visible with explanations and become eligible on resolution',()=>{
+ let s=fixture();s=run(s,{type:'constraint',id:'k',taskId:'A',week:start,category:'Equipment',description:'Excavator missing',owner:'Lead',due:start});
+ const candidates=weeklyCandidates(s,start);assert.equal(candidates.length,2);assert.equal(candidates[0].eligible,false);assert.match(candidates[0].issues.join(' '),/Excavator missing/);assert.equal(candidates[1].eligible,true);
+ s=run(s,{type:'resolve',id:'k',date:start,resolution:'Excavator on site'});assert.ok(weeklyCandidates(s,start).every(a=>a.eligible));
 });

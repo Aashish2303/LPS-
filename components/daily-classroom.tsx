@@ -9,7 +9,8 @@ const displayDate=new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',t
 const dateLabel=(date:string)=>displayDate.format(new Date(date+'T00:00:00Z'));
 export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openCloseout}:Props){
  const [date,setDate]=useState(week?dailyCursor(week):state.start);
- if(!week||week.status==='draft')return <div className="empty"><h3>Start your weekly plan first</h3><p>Freeze the promises before recording daily quantities.</p><button onClick={openWeekly}>Open weekly work plan</button></div>;
+ if(!week||week.status==='draft')return <div className="empty"><h3>Commit activities before daily check-in</h3><p>Open the weekly work plan, commit ready activities, then start the week.</p><button onClick={openWeekly}>Open weekly work plan</button></div>;
+ if(!week.commitments.length)return <section className="panel"><h2>No activities were committed for this week</h2><p>{week.noWorkReason?'No-work reason: '+week.noWorkReason:'The week was started with an empty plan. Return to planning to choose the activities and confirm your commitments.'}</p><div className="actions">{week.status==='active'&&<button className="primary" disabled={!canEdit||busy} onClick={()=>send({type:'reopenEmptyWeek',week:week.key})}>Return to weekly planning</button>}{week.status==='active'&&week.noWorkReason&&<button onClick={openCloseout}>Review & close no-work week</button>}</div></section>;
  const active=week.status==='active',cursor=dailyCursor(week),complete=dayComplete(state,week,date),last=addDays(week.key,6);
  async function select(next:string){if(next===date)return;if(!active){setDate(next);return;}if(await send({type:'selectDay',week:week!.key,date:next}))setDate(next);}
  return <>
@@ -23,7 +24,6 @@ export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openClos
     <DailyEntry key={c.id+date} commitmentId={c.id} date={date} unit={task.unit} activityName={task.name} saved={entry} disabled={!active||!canEdit||busy} send={send}/>
    </div>
   </section>;})}
-  {!week.commitments.length&&<p className="callout">This week has no promises. You can close it and review the constraints before the next week.</p>}
   <div className="dayactions"><button disabled={busy||date===week.key} onClick={()=>select(addDays(date,-1))}><ArrowLeft size={16}/>Previous day</button>{date<last?<button className="primary" disabled={busy||(!complete&&date>=cursor)} onClick={()=>select(addDays(date,1))}>Next day<ArrowRight size={16}/></button>:<button className="primary" disabled={busy||(!complete&&active)} onClick={openCloseout}>Review & close week<ArrowRight size={16}/></button>}</div>
  </>;
 }
