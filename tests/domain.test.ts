@@ -10,7 +10,7 @@ test('same-day correction replaces rather than adds; later days accumulate',()=>
 test('decimal quantities retain exact thousandths',()=>{assert.equal(sum([.1,.2,.3]),.6);let s=run(promise(fixture(1),W,'c',.6),{type:'freeze',week:W});for(const [date,q] of [['2026-10-19',.1],['2026-10-20',.2],['2026-10-21',.3]] as const)s=run(s,{type:'actual',commitmentId:'c',date,quantity:q,note:''});assert.equal(taskActual(s,'a'),.6);assert.equal(metrics(s,s.weeks[0]).ppc,100);});
 test('overproduction and negative quantities are rejected without mutation',()=>{let s=run(promise(fixture(60)),{type:'freeze',week:W});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:W,quantity:61,note:''}),/exceeds/);assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:W,quantity:-2,note:''}));assert.equal(s.entries.length,0);});
 test('zero promises, duplicate promises, invalid dates rejected',()=>{assert.throws(()=>promise(fixture(),W,'c',0));let s=promise(fixture());assert.throws(()=>run(s,{type:'commit',id:'other',taskId:'a',week:W,quantity:1,due:'2026-10-23',owner:'L'}),/one commitment/);assert.throws(()=>monday('2026-02-30'));assert.throws(()=>run(s,{type:'allocate',id:'x',taskId:'a',week:'2026-10-20',quantity:1}),/Monday/);});
-test('late completions count toward scope but miss on-time PPC',()=>{let s=run(promise(fixture()),{type:'freeze',week:W});s=run(s,{type:'actual',commitmentId:'c',date:'2026-10-24',quantity:60,note:''});assert.equal(taskActual(s,'a'),60);assert.equal(metrics(s,s.weeks[0]).ppc,0);});
+test('completion after the promised day within the week achieves weekly PPC',()=>{let s=run(promise(fixture()),{type:'freeze',week:W});s=run(s,{type:'actual',commitmentId:'c',date:'2026-10-24',quantity:60,note:''});assert.equal(taskActual(s,'a'),60);assert.equal(metrics(s,s.weeks[0]).ppc,100);});
 test('99 percent remains a binary miss',()=>{let s=run(promise(fixture(),W,'c',100),{type:'freeze',week:W});s=run(s,{type:'actual',commitmentId:'c',date:W,quantity:99,note:''});assert.equal(metrics(s,s.weeks[0]).ppc,0);});
 test('closeout requires reason and action; closed ledger is immutable',()=>{let s=run(promise(fixture()),{type:'freeze',week:W});assert.throws(()=>run(s,{type:'close',week:W}),/reason/);s=run(s,{type:'variance',commitmentId:'c',reason:'Materials',learning:'Lead to confirm delivery on Friday'});s=run(s,{type:'close',week:W});assert.throws(()=>run(s,{type:'actual',commitmentId:'c',date:W,quantity:1,note:''}),/locked/);assert.throws(()=>run(s,{type:'variance',commitmentId:'c',reason:'Other',learning:'Changed'}),/active week/);});
 test('frozen plan denominator cannot be changed',()=>{const s=run(promise(fixture()),{type:'freeze',week:W});assert.throws(()=>run(s,{type:'uncommit',id:'c',week:W}),/Frozen/);assert.throws(()=>run(s,{type:'commit',id:'c2',taskId:'a',week:W,quantity:10,due:'2026-10-23',owner:'Lead'}),/frozen/);});
@@ -40,11 +40,11 @@ test('learning exercise accepts all seven days in advance with exact totals and 
 test('practice weeks can close early with future-dated entries, final PPC and locked records',()=>{
  const week='2026-10-26';let s=run(promise(fixture(),week,'c',60),{type:'freeze',week});
  s=run(s,{type:'actual',commitmentId:'c',date:'2026-10-31',quantity:60,note:'Simulated late completion'});
- assert.equal(taskActual(s,'a'),60);assert.equal(metrics(s,s.weeks[0]).ppc,0);
+ assert.equal(taskActual(s,'a'),60);assert.equal(metrics(s,s.weeks[0]).ppc,100);
  s=run(s,{type:'variance',commitmentId:'c',reason:'Materials',learning:'Confirm delivery earlier'});
  s=applyCommand(s,{type:'close',week},'2026-10-27');
  assert.equal(s.weeks[0].closedOn,'2026-10-27');
- assert.equal(metrics(s,s.weeks[0]).ppc,0);
+ assert.equal(metrics(s,s.weeks[0]).ppc,100);
  assert.throws(()=>applyCommand(s,{type:'actual',commitmentId:'c',date:'2026-10-31',quantity:50,note:''},'2026-11-02'),/locked/);
 });
 test('empty PPC denominator displays no score',()=>{assert.equal(metrics(fixture(),{key:W,status:'draft',commitments:[],frozenOn:null,closedOn:null,plannedAtFreeze:0,readyAtFreeze:0}).ppc,null);});

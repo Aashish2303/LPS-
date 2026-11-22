@@ -8,7 +8,7 @@ export type Task={id:string;name:string;trade:string;area:string;owner:string;un
 export type Constraint={id:string;taskId:string;category:string;description:string;owner:string;due:string;week?:string;resolvedOn:string|null;resolution:string};
 export type Allocation={id:string;taskId:string;week:string;quantity:number;createdOn:string;carry?:number};
 export type Commitment={id:string;taskId:string;quantity:number;due:string;owner:string;reason:string;reasonNote?:string;learning:string;anticipated:boolean};
-export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[];dailyDate?:string;dailyReasonsRequired?:boolean;noWorkReason?:string};
+export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[];dailyDate?:string;dailyReasonsRequired?:boolean;noWorkReason?:string;ppcRule?:'weekly'};
 export type Entry={commitmentId:string;date:string;quantity:number;note:string;reason?:string};
 export type State={schema:1;calendarStart?:string;classroom?:boolean;name:string;code:string;client:string;location:string;start:string;finish:string;trades:string[];areas:string[];milestones:Milestone[];tasks:Task[];constraints:Constraint[];allocations:Allocation[];weeks:Week[];entries:Entry[]};
 export class DomainError extends Error { constructor(message:string,public status=422){super(message);} }
@@ -95,7 +95,8 @@ export function dayComplete(s:State,w:Week,date:string){
   const task=findTask(s,c.taskId);
   if(date<task.start)return true;
   const planned=dailyCommitmentPlan(task,w.key,c).days.find(d=>d.date===date)?.quantity??0;
-  return dailyEntryComplete(planned,s.entries.find(e=>e.commitmentId===c.id&&e.date===date));
+  const entry=s.entries.find(e=>e.commitmentId===c.id&&e.date===date);
+  return dailyEntryComplete(planned,entry,!!entry&&!dailyReasonRequired(s,w,c,date,entry.quantity));
  });
 }
 export function dailyCursor(w:Week){return w.dailyDate??w.key;}
@@ -168,11 +169,26 @@ export function dailyCommitmentPlan(task:Task,week:string,commitment:Pick<Commit
  });
  return {start,finish,workingDays,carryover,average:workingDays?commitment.quantity/workingDays:0,days};
 }
-export function dailyEntryComplete(planned:number,entry?:Entry){
+export function dailyEntryComplete(planned:number,entry?:Entry,quantityAlreadyComplete=false){
  if(!entry)return false;
- if(scaled(entry.quantity)>=scaled(planned))return true;
+ if(quantityAlreadyComplete||scaled(entry.quantity)>=scaled(planned))return true;
  const code=reasonCode(entry.reason??'');
  return !!code&&(code!==otherReason||!!entry.note.trim());
+}
+// Compare a candidate replacement against work completed by this date only.
+// Future entries must never waive an earlier day's shortfall reason.
+export function dailyReasonRequired(s:State,w:Week,c:Commitment,date:string,quantity:number){
+ const task=findTask(s,c.taskId),previous=addDays(date,-1),units=scaled(quantity);
+ if(scaled(commitmentActual(s,c,previous))+units>=scaled(c.quantity))return false;
+ if(scaled(taskActual(s,task.id,previous))+units>=scaled(task.total))return false;
+ const planned=dailyCommitmentPlan(task,w.key,c).days.find(d=>d.date===date)?.quantity??0;
+ return units<scaled(planned);
+}
+export function weeklyPpcRule(w:Week){return w.ppcRule==='weekly'||w.status!=='closed';}
+export function commitmentOutcome(s:State,w:Week,c:Commitment){
+ const byDue=commitmentActual(s,c,c.due),byWeek=commitmentActual(s,c,addDays(w.key,6));
+ const completed=scaled(byWeek)>=scaled(c.quantity),onTime=scaled(byDue)>=scaled(c.quantity);
+ return {byDue,byWeek,completed,onTime,late:completed&&!onTime,ppcMet:weeklyPpcRule(w)?completed:onTime,requiresReason:!onTime};
 }
 export function phaseWeekQuantity(task:Task,week:string){
  return (phaseQuantityThrough(task,addDays(week,6))-phaseQuantityThrough(task,addDays(week,-1)))/1000;
@@ -210,7 +226,7 @@ export function forecastDue(task:Task,week:string){
  return task.finish<week?sunday:task.finish<sunday?task.finish:sunday;
 }
 function getWeek(s:State,key:string,create=false){checkWeek(s,key);let w=s.weeks.find(w=>w.key===key);if(!w&&create){w={key,status:'draft',commitments:[],frozenOn:null,closedOn:null,readyAtFreeze:0,plannedAtFreeze:0};s.weeks.push(w);}requireThat(w,'Create commitments before starting this week');return w;}
-export function metrics(s:State,w:Week){const done=w.commitments.filter(c=>scaled(commitmentActual(s,c,c.due))>=scaled(c.quantity)).length;return {total:w.commitments.length,done,ppc:pct(done,w.commitments.length),ta:pct(w.commitments.filter(c=>c.anticipated).length,w.commitments.length),tmr:w.frozenOn?pct(w.readyAtFreeze,w.plannedAtFreeze):null};}
+export function metrics(s:State,w:Week){const done=w.commitments.filter(c=>commitmentOutcome(s,w,c).ppcMet).length;return {total:w.commitments.length,done,ppc:pct(done,w.commitments.length),ta:pct(w.commitments.filter(c=>c.anticipated).length,w.commitments.length),tmr:w.frozenOn?pct(w.readyAtFreeze,w.plannedAtFreeze):null};}
 function reserved(s:State,taskId:string,except?:string){return sum(s.weeks.filter(w=>w.status!=='closed').flatMap(w=>w.commitments).filter(c=>c.taskId===taskId&&c.id!==except).map(c=>Math.max(0,(scaled(c.quantity)-scaled(commitmentActual(s,c)))/1000)))}
 export function available(s:State,t:Task){return (scaled(remaining(s,t))-scaled(reserved(s,t.id)))/1000;}
 // Use the same eligibility rules for the planning controls and deliberate no-work weeks.
@@ -319,7 +335,7 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
   requireThat(w.commitments.every(k=>ready(s,findTask(s,k.taskId),k.due)),'A promised activity is no longer ready');
   const items=weekAllocations(s,w.key);
   requireThat(w.commitments.every(k=>items.some(a=>a.taskId===k.taskId&&scaled(a.quantity)===scaled(k.quantity))),'A forecast has changed. Remove and remake the affected promise before starting the week');
-  w.plan=items;w.dailyDate=w.key;w.dailyReasonsRequired=!!s.classroom;w.status='active';w.frozenOn=now;
+  w.plan=items;w.dailyDate=w.key;w.dailyReasonsRequired=!!s.classroom;w.status='active';w.frozenOn=now;w.ppcRule='weekly';
   w.plannedAtFreeze=items.length;w.readyAtFreeze=items.filter(a=>ready(s,findTask(s,a.taskId),forecastDue(findTask(s,a.taskId),w.key))).length;
   break;
  }
@@ -336,8 +352,7 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
   let savedReason:string|undefined;
   if(s.classroom||w.dailyReasonsRequired){
    requireThat(c.date<=dailyCursor(w),'Save the current day’s quantities and required reasons before advancing');
-   const planned=dailyCommitmentPlan(t,w.key,k).days.find(d=>d.date===c.date)!.quantity;
-   if(scaled(c.quantity)<scaled(planned)){
+   if(dailyReasonRequired(s,w,k,c.date,c.quantity)){
     const code=reasonCode(c.reason??'');
     requireThat(code,'Select a daily reason when actual is below the daily plan');
     requireThat(code!==otherReason||!!c.note.trim(),'Explain the daily reason when selecting RC-16');
@@ -350,6 +365,11 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
    requireThat(issues.length===0,'A constraint blocks work on this date: '+issues.join(' · '));
   }
   const next={commitmentId:k.id,date:c.date,quantity:c.quantity,note:c.note,reason:savedReason};if(old)Object.assign(old,next);else s.entries.push(next);
+  if(s.classroom||w.dailyReasonsRequired){
+   for(let date=addDays(c.date,1);date<=dailyCursor(w);date=addDays(date,1)){
+    if(!dayComplete(s,w,date)){w.dailyDate=date;break;}
+   }
+  }
   break;
  }
  case 'selectDay':{
@@ -372,16 +392,17 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
  case 'close':{
   const w=getWeek(s,c.week);
   requireThat(w.status==='active','Only an active week can be closed');
-  const missed=w.commitments.filter(k=>scaled(commitmentActual(s,k,k.due))<scaled(k.quantity));
+  const missed=w.commitments.filter(k=>commitmentOutcome(s,w,k).requiresReason);
   const byId=new Map(missed.map(k=>[k.id,k]));
   const evaluated=new Set<string>();
   for(const details of c.reasons??[]){
    const commitment=byId.get(details.commitmentId);
-   requireThat(commitment&&!evaluated.has(details.commitmentId),'Choose one reason for each missed promise in this week');
+   requireThat(commitment&&!evaluated.has(details.commitmentId),'Choose one primary reason for each delayed or incomplete commitment in this week');
    saveVariance(commitment,details);
    evaluated.add(details.commitmentId);
   }
-  requireThat(missed.every(k=>k.reason.trim()&&k.learning.trim()),'Every missed promise needs a reason and improvement action');
+  requireThat(missed.every(k=>reasonCode(k.reason)&&k.learning.trim()&&(reasonCode(k.reason)!==otherReason||k.reasonNote?.trim())),'Every delayed or incomplete commitment needs a reason and improvement action');
+  w.ppcRule='weekly';
   w.status='closed';
   w.closedOn=now;
   break;
