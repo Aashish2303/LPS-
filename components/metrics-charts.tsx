@@ -3,26 +3,28 @@ const chartColors = [
   '#e2df82', '#57b59f', '#ad9ae6', '#faafd5', '#9eb4c5', '#d4a579', '#f57c63', '#a7d1b9',
 ];
 
-export function PpcTrend({points}:{points:{week:string;label:string;ppc:number}[]}){
+export function PpcTrend({points,label='Weekly PPC for closed weeks, with an 80 percent reference line'}:{points:{week:string;label:string;ppc:number|null}[];label?:string}){
   const width = Math.max(580, points.length * 68 + 68);
   const left = 48;
   const right = width - 28;
   const y = (value:number) => 185 - value * 1.45;
   const plotted = points.map((point, i) => ({
     ...point, x:points.length === 1 ? (left+right)/2 : left + (right-left)*i/(points.length-1),
-    y:y(point.ppc),
+    y:point.ppc===null?null:y(point.ppc),
   }));
+  const segments:string[][]=[];
+  for(const point of plotted){if(point.y===null){segments.push([]);continue;}if(!segments.length)segments.push([]);segments[segments.length-1].push(point.x+','+point.y);}
   return <div className="chartscroll">
-    <svg role="img" aria-label="Weekly PPC for closed weeks, with an 80 percent reference line" viewBox={`0 0 ${width} 228`} style={{minWidth:width}}>
+    <svg role="img" aria-label={label} viewBox={`0 0 ${width} 228`} style={{minWidth:width}}>
       {[0,25,50,75,100].map(value=><g key={value}>
         <line className="trendgrid" x1={left} y1={y(value)} x2={right} y2={y(value)}/>
         <text className="trendlabel" textAnchor="end" x={left-7} y={y(value)+4}>{value}%</text>
       </g>)}
       <line className="trendtarget" x1={left} y1={y(80)} x2={right} y2={y(80)}/>
-      <polyline className="trendline" points={plotted.map(point=>point.x+','+point.y).join(' ')}/>
+      {segments.filter(segment=>segment.length>1).map((segment,i)=><polyline key={i} className="trendline" points={segment.join(' ')}/>)}
       {plotted.map(point=><g key={point.week}>
-        <circle className="trendpoint" cx={point.x} cy={point.y} r={5}><title>{point.label}: {point.ppc}% PPC</title></circle>
-        <text className="trendvalue" textAnchor="middle" x={point.x} y={point.y-12}>{point.ppc}%</text>
+        {point.y!==null&&<circle className="trendpoint" cx={point.x} cy={point.y} r={5}><title>{point.label}: {point.ppc}% PPC</title></circle>}
+        <text className="trendvalue" textAnchor="middle" x={point.x} y={point.y===null?185:point.y-12}>{point.ppc===null?'—':point.ppc+'%'}</text>
         <text className="trendlabel" textAnchor="middle" x={point.x} y={211}>{point.label}</text>
       </g>)}
     </svg>

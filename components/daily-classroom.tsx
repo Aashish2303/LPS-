@@ -3,6 +3,7 @@ import {useState,type FormEvent} from 'react';
 import {ArrowLeft,ArrowRight,CheckCircle2,Save} from 'lucide-react';
 import {addDays,dailyCommitmentPlan,dailyEntryComplete,dailyReasonRequired,dailyCursor,dayComplete,findTask,commitmentActual,taskActual,fmt,pct,type State,type Week} from '@/lib/domain';
 import {reasonCodes,reasonCode,otherReason} from '@/lib/reason-codes';
+import {dailyPpc} from '@/lib/daily-ppc';
 
 type Props={state:State;week?:Week;canEdit:boolean;busy:boolean;send:(command:unknown)=>Promise<boolean>;openWeekly:()=>void;openCloseout:()=>void};
 const displayDate=new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',timeZone:'UTC'});
@@ -13,12 +14,19 @@ export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openClos
  const [date,setDate]=useState(week?dailyCursor(week):state.start);
  if(!week||week.status==='draft')return <div className="empty"><h3>Commit activities before daily check-in</h3><p>Open the weekly work plan, commit ready activities, then start the week.</p><button onClick={openWeekly}>Open weekly work plan</button></div>;
  if(!week.commitments.length)return <section className="panel"><h2>No activities were committed for this week</h2><p>{week.noWorkReason?'No-work reason: '+week.noWorkReason:'The week was started with an empty plan. Return to planning to choose the activities and confirm your commitments.'}</p><div className="actions">{week.status==='active'&&<button className="primary" disabled={!canEdit||busy} onClick={()=>send({type:'reopenEmptyWeek',week:week.key})}>Return to weekly planning</button>}{week.status==='active'&&week.noWorkReason&&<button onClick={openCloseout}>Review & close no-work week</button>}</div></section>;
- const active=week.status==='active',cursor=dailyCursor(week),complete=dayComplete(state,week,date),last=addDays(week.key,6);
+ const active=week.status==='active',cursor=dailyCursor(week),complete=dayComplete(state,week,date),last=addDays(week.key,6),score=dailyPpc(state,week,date);
  async function select(next:string){if(next===date)return;if(!active){setDate(next);return;}if(await send({type:'selectDay',week:week!.key,date:next}))setDate(next);}
  return <>
   <section className="panel daynavigation">
    <div className="panelhead"><div><h2>Day {Math.round((Date.parse(date)-Date.parse(week.key))/86400000)+1} · {dateLabel(date)}</h2><p>Record the quantity for this day only. A delay reason is required for a daily shortfall unless the committed quantity is already complete by that day. Save before advancing.</p></div><span className={'badge '+(complete?'teal':'amber')}>{complete?'Day saved':'Entries required'}</span></div>
    <div className="daytabs" aria-label="Exercise days">{Array.from({length:7},(_,i)=>{const key=addDays(week.key,i);return <button key={key} className={date===key?'active':''} disabled={busy||(active&&(key>addDays(cursor,1)||(key>cursor&&!dayComplete(state,week,cursor))))} aria-current={date===key?'date':undefined} onClick={()=>select(key)}>Day {i+1}<small>{dateLabel(key)}</small>{dayComplete(state,week,key)&&<CheckCircle2 size={14}/>}</button>;})}</div>
+   <div className="dailyppc" aria-label={'Daily PPC for '+dateLabel(date)} aria-live="polite">
+    <div><span>Daily PPC · saved quantities</span><strong>{score.ppc===null?'—':score.ppc+'%'}</strong><small>{score.status==='no-work'?'No eligible daily targets':score.pending?'Awaiting '+score.pending+' saved '+(score.pending===1?'entry':'entries'):score.done+' of '+score.total+' daily targets achieved'}</small></div>
+    <div><span>Achieved</span><strong>{score.done}</strong><small>{score.total} eligible targets</small></div>
+    <div><span>Missed</span><strong>{score.missed}</strong><small>{score.pending} awaiting entry</small></div>
+    <div><span>Completed earlier</span><strong>{score.excluded}</strong><small>Excluded from today’s score</small></div>
+    <p>Daily PPC = achieved activity targets ÷ eligible activity targets × 100. Zero-plan days and targets completed earlier are excluded. Unsaved entries stay pending; weekly PPC is calculated separately.</p>
+   </div>
   </section>
   {week.commitments.map(c=>{const task=findTask(state,c.taskId),entry=state.entries.find(e=>e.commitmentId===c.id&&e.date===date),actual=commitmentActual(state,c),all=taskActual(state,task.id),plan=dailyCommitmentPlan(task,week.key,c),plannedToday=plan.days.find(d=>d.date===date)!.quantity;return <section className="dailycard" key={c.id}>
    <div className="dailyhead"><div><div className="eyebrow">{task.trade} / {task.area}</div><h3>{task.name}</h3><p>{c.owner}</p><p className="dailyactivitydates"><span>Activity start: <time dateTime={task.start}>{activityDateLabel(task.start)}</time></span><span>Planned finish: <time dateTime={task.finish}>{activityDateLabel(task.finish)}</time></span><span>Weekly due: <time dateTime={c.due}>{activityDateLabel(c.due)}</time></span></p></div><span className="badge">{dailyEntryComplete(plannedToday,entry,!!entry&&!dailyReasonRequired(state,week,c,date,entry.quantity))?'Saved for this day':entry?'Shortfall reason required':'Awaiting entry'}</span></div>
