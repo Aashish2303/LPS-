@@ -127,14 +127,11 @@ function calculateBlockers(s:State,t:Task,date?:string){
   ancestors.set(task.id,task);
   pending.push(...task.predecessors);
  }
- const messages=s.constraints.filter(c=>
+ // Classroom readiness follows recorded constraints, not predecessor actual completion.
+ // Keep ancestor traversal so a constraint still blocks every downstream activity.
+ return s.constraints.filter(c=>
   (c.taskId===t.id||ancestors.has(c.taskId))&&(!c.week||!date||c.week<=date)&&(!c.resolvedOn||(date&&c.resolvedOn>date)),
  ).map(c=>c.taskId===t.id?c.description:taskById.get(c.taskId)?.name+': '+c.description);
- const through=date?addDays(date,-1):undefined;
- for(const pred of ancestors.values()){
-  if(scaled(taskActual(s,pred.id,through))<scaled(pred.total))messages.push('Handoff: '+pred.name);
- }
- return messages;
 }
 export function ready(s:State,t:Task,date?:string){
  return remaining(s,t)>0&&blockers(s,t,date).length===0;
@@ -276,7 +273,7 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
  }
  case 'unallocate':{const a=s.allocations.find(x=>x.id===c.id);requireThat(a,'Allocation not found');const w=s.weeks.find(w=>w.key===a.week);requireThat(!w||w.status==='draft','Started weeks cannot be replanned');requireThat(!w?.commitments.some(k=>k.taskId===a.taskId),'Remove the draft promise before its allocation');s.allocations=s.allocations.filter(x=>x.id!==c.id);break;}
  case 'commit':{
-  const t=findTask(s,c.taskId),w=getWeek(s,c.week,true);if(s.classroom)requireThat(c.week===currentExerciseWeek(s),'Make promises for the current exercise week');requireThat(w.status==='draft','Commitments are frozen once a week starts');requireThat(!s.weeks.some(w=>w.commitments.some(k=>k.id===c.id)),'Commitment already exists');requireThat(!w.commitments.some(k=>k.taskId===t.id),'Only one commitment per activity per week');requireThat(ready(s,t,c.due),'Clear constraints and complete predecessor handoffs first');
+  const t=findTask(s,c.taskId),w=getWeek(s,c.week,true);if(s.classroom)requireThat(c.week===currentExerciseWeek(s),'Make promises for the current exercise week');requireThat(w.status==='draft','Commitments are frozen once a week starts');requireThat(!s.weeks.some(w=>w.commitments.some(k=>k.id===c.id)),'Commitment already exists');requireThat(!w.commitments.some(k=>k.taskId===t.id),'Only one commitment per activity per week');requireThat(ready(s,t,c.due),'Clear constraints on this activity and its predecessors first');
   const a=weekAllocations(s,c.week).find(a=>a.taskId===t.id);requireThat(a,'No forecast quantity is scheduled for this activity in this week');requireThat(scaled(c.quantity)===scaled(a.quantity),'Promise must equal the full weekly forecast quantity');requireThat(c.due>=c.week&&c.due<addDays(c.week,7)&&c.due>=t.start&&c.due<=forecastDue(t,c.week),'Promise due date must be inside its week and activity schedule');requireThat(scaled(c.quantity)<=scaled(available(s,t)),'Promise exceeds unreserved remaining scope');
   w.commitments.push({id:c.id,taskId:t.id,quantity:c.quantity,due:c.due,owner:c.owner,reason:'',learning:'',anticipated:a.createdOn<c.week});break;
  }
@@ -315,10 +312,9 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
   const old=s.entries.find(e=>e.commitmentId===k.id&&e.date===c.date);const others=(scaled(taskActual(s,t.id))-scaled(old?.quantity??0))/1000;requireThat(scaled(others)+scaled(c.quantity)<=scaled(t.total),'Cumulative actual exceeds activity scope');requireThat(scaled(others)+scaled(c.quantity)+scaled(reserved(s,t.id,k.id))<=scaled(t.total),'Actual would consume scope reserved for another open promise');
   if(c.quantity>(old?.quantity??0)){
    const issues=blockers(s,t,c.date);
-   requireThat(issues.length===0,(issues[0]?.startsWith('Handoff:')?'Finish-to-start handoff must be complete before this date: ':'A constraint blocks work on this date: ')+issues.join(' · '));
+   requireThat(issues.length===0,'A constraint blocks work on this date: '+issues.join(' · '));
   }
   const next={commitmentId:k.id,date:c.date,quantity:c.quantity,note:c.note,reason:c.reason};if(old)Object.assign(old,next);else s.entries.push(next);
-  for(const successor of s.tasks.filter(x=>x.predecessors.includes(t.id))){const ids=new Set(s.weeks.flatMap(w=>w.commitments).filter(k=>k.taskId===successor.id).map(k=>k.id));for(const e of s.entries.filter(e=>ids.has(e.commitmentId)&&e.quantity>0)){const predIds=new Set(s.weeks.flatMap(w=>w.commitments).filter(k=>k.taskId===t.id).map(k=>k.id));const done=sum(s.entries.filter(x=>predIds.has(x.commitmentId)&&x.date<e.date).map(x=>x.quantity));requireThat(scaled(done)>=scaled(t.total),'Correction would invalidate an existing successor handoff');}}
   break;
  }
  case 'selectDay':{

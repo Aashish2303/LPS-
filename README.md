@@ -29,7 +29,7 @@ The CSV template uses `id,name,trade,area,owner,unit,total,early_start,early_fin
 - Project reliability uses total on-time completions / total frozen commitments across closed weeks, not a mean of percentages.
 - TA here is the proportion of weekly promises whose allocation was first created before the week began. TMR is ready allocated activities / all allocated activities, snapshotted when the week starts. Confirm these operational definitions against the professor’s research protocol.
 - CPM is computed from activity durations, project start, and finish-to-start, zero-lag dependencies. Calendar days are inclusive. Early/late CPM dates are displayed separately from the entered baseline. Resource levelling, work calendars, holidays, SS/FF dependencies and lag are not implemented.
-- Ready means positive remaining scope, no unresolved constraints on the activity or its predecessors, and completed predecessor scope. Handoffs require completion before the successor’s actual date.
+- Classroom readiness means positive remaining scope and no unresolved constraints on the activity or any transitive predecessor. An unfinished predecessor alone does not block a weekly commitment, week start, daily progress, or a quantity correction. Record a constraint when a handoff is at risk; the constraint blocks that activity and all its successors for the affected dates. Baseline FS scheduling, scope limits, daily reasons and closed-week locks remain enforced.
 - Activity baseline and scope can be edited before forecasts or promises exist. Once promised, those fields are frozen. Scope-change/rebaseline management is a future workflow.
 
 ## Access and consistency
@@ -54,7 +54,7 @@ The CSV template uses `id,name,trade,area,owner,unit,total,early_start,early_fin
 
 ## Verification status · 27 October 2026
 
-- Passing domain regression tests cover day corrections, decimal totals, scope overflow, duplicate promises, invalid dates, due-date PPC, binary completion, closeout requirements, frozen plans, carryover, forecast over-allocation, constraints, FS handoffs, all seven learning dates entered in advance, CPM cycles/durations, separate units, year boundaries, demo integrity and forecast/activity corrections.
+- Passing domain regression tests cover day corrections, decimal totals, scope overflow, duplicate promises, invalid dates, due-date PPC, binary completion, closeout requirements, frozen plans, carryover, forecast over-allocation, constraints, constraint-only successor readiness, all seven learning dates entered in advance, CPM cycles/durations, separate units, year boundaries, demo integrity and forecast/activity corrections.
 - TypeScript and optimized Next.js builds pass.
 - Production dependency audit: zero known vulnerabilities after applying patched Zod and esbuild overrides. Auth SDK versions are pinned; its wrapper and peer APIs compile successfully.
 - Live browser demo verified that a daily addition moved weekly actual from 20 to 30 and a correction reduced it to 25, retaining one entry per day.
