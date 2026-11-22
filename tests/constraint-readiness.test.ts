@@ -11,23 +11,23 @@ function fixture(){
 }
 function commit(s:State,taskId:string,key=week){const a=weekAllocations(s,key).find(a=>a.taskId===taskId)!;return run(s,{type:'commit',id:taskId+key,taskId,week:key,quantity:a.quantity,due:findTask(s,taskId).finish<addDays(key,6)&&findTask(s,taskId).finish>=key?findTask(s,taskId).finish:addDays(key,6),owner:'Lead'});}
 const hold=(taskId='A',affected=week)=>({type:'constraint',id:'hold-'+taskId,taskId,week:affected,category:'Predecessor delay',description:'Handoff at risk: inspection pending',owner:'Lead',due:affected});
-function advance(s:State,target:string){while(s.weeks.at(-1)!.dailyDate!<target){const w=s.weeks.at(-1)!;for(const c of w.commitments)if(findTask(s,c.taskId).start<=w.dailyDate!&&!s.entries.some(e=>e.commitmentId===c.id&&e.date===w.dailyDate))s=run(s,{type:'actual',commitmentId:c.id,date:w.dailyDate,quantity:0,reason:'ON_PLAN',note:''});s=run(s,{type:'selectDay',week:w.key,date:addDays(w.dailyDate!,1)});}return s;}
+function advance(s:State,target:string){while(s.weeks.at(-1)!.dailyDate!<target){const w=s.weeks.at(-1)!;for(const c of w.commitments)if(findTask(s,c.taskId).start<=w.dailyDate!&&!s.entries.some(e=>e.commitmentId===c.id&&e.date===w.dailyDate))s=run(s,{type:'actual',commitmentId:c.id,date:w.dailyDate,quantity:0,reason:'RC-10',note:''});s=run(s,{type:'selectDay',week:w.key,date:addDays(w.dailyDate!,1)});}return s;}
 
 test('excavation and footing can be promised together and footing progress corrected while excavation is incomplete',()=>{
  let s=fixture();assert.deepEqual(blockers(s,findTask(s,'B')),[]);assert.deepEqual(blockers(s,findTask(s,'C')),[]);
  assert.ok(weeklyCandidates(s,week).find(a=>a.task.id==='B')!.eligible);
  s=commit(commit(s,'A'),'B');s=run(s,{type:'freeze',week});
- s=run(s,{type:'actual',commitmentId:'A'+week,date:week,quantity:5,reason:'ON_PLAN',note:''});
+ s=run(s,{type:'actual',commitmentId:'A'+week,date:week,quantity:5,reason:'RC-10',note:''});
  s=advance(s,'2026-11-26');
- s=run(s,{type:'actual',commitmentId:'B'+week,date:'2026-11-26',quantity:2,reason:'ON_PLAN',note:''});
+ s=run(s,{type:'actual',commitmentId:'B'+week,date:'2026-11-26',quantity:2,reason:'RC-10',note:''});
  s=run(s,{type:'actual',commitmentId:'A'+week,date:week,quantity:4,reason:'RC-09',note:'Corrected excavation measurement'});
- s=run(s,{type:'actual',commitmentId:'B'+week,date:'2026-11-26',quantity:2.125,reason:'ON_PLAN',note:'Corrected footing measurement'});
+ s=run(s,{type:'actual',commitmentId:'B'+week,date:'2026-11-26',quantity:2.125,reason:'RC-10',note:'Corrected footing measurement'});
  assert.equal(taskActual(s,'A'),4);assert.equal(taskActual(s,'B'),2.125);
  s=run(s,{type:'close',week,reasons:s.weeks[0].commitments.map(c=>({commitmentId:c.id,reason:'RC-10',learning:'Trade lead to review production rates'}))});
  const closed=structuredClone(s.weeks[0]);assert.equal(metrics(s,closed).ppc,0);assert.equal(currentExerciseWeek(s),next);
  assert.equal(weekAllocations(s,next).find(a=>a.taskId==='B')!.quantity,7.875);
  s=commit(s,'B',next);s=run(s,{type:'freeze',week:next});
- s=run(s,{type:'actual',commitmentId:'B'+next,date:next,quantity:1.1,reason:'ON_PLAN',note:''});
+ s=run(s,{type:'actual',commitmentId:'B'+next,date:next,quantity:1.1,reason:'RC-10',note:''});
  assert.equal(taskActual(s,'A'),4);assert.equal(taskActual(s,'B'),3.225);assert.deepEqual(s.weeks[0],closed);
 });
 
@@ -46,7 +46,7 @@ test('a constraint added after commitment blocks week start and successor progre
  let s=commit(fixture(),'B');s=run(s,hold());assert.throws(()=>run(s,{type:'freeze',week}),/no longer ready/);
  s=run(s,{type:'resolve',id:'hold-A',date:week,resolution:'Inspection accepted'});s=run(s,{type:'freeze',week});s=advance(s,'2026-11-26');
  s=run(s,{...hold('B'),description:'Footing pump unavailable'});
- const record={type:'actual',commitmentId:'B'+week,date:'2026-11-26',quantity:1,reason:'ON_PLAN',note:''};
+ const record={type:'actual',commitmentId:'B'+week,date:'2026-11-26',quantity:1,reason:'RC-10',note:''};
  const before=structuredClone(s);assert.throws(()=>run(s,record),/constraint blocks.*Footing pump unavailable/);assert.deepEqual(s,before);
  assert.match(blockers(s,findTask(s,'C'),'2026-12-03').join(' '),/Footing: Footing pump unavailable/);
  s=run(s,{type:'resolve',id:'hold-B',date:'2026-11-26',resolution:'Pump on site'});s=run(s,record);assert.equal(taskActual(s,'B'),1);assert.equal(taskActual(s,'A'),0);

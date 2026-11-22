@@ -7,7 +7,7 @@ const now='2026-11-22';
 const run=(s:State,c:unknown)=>applyCommand(s,c,now);
 function fixture(){return run(emptyState('Classroom',now),parsePhaseCsv('id,name,trade,area,owner,unit,total,early_start,early_finish,late_finish,float,predecessors\nA,Excavation,Civil,Zone A,Lead,m³,10.001,2027-02-02,2027-02-15,2027-02-16,-1,\nB,Reinforcement,Structure,Zone B,Lead,t,20,2027-02-02,2027-02-15,2027-02-15,0,'));}
 function promiseAll(s:State,key=currentExerciseWeek(s)){for(const a of weekAllocations(s,key))s=run(s,{type:'commit',id:a.taskId+key,taskId:a.taskId,week:key,quantity:a.quantity,due:addDays(key,6),owner:'Lead'});return run(s,{type:'freeze',week:key});}
-function record(s:State,id:string,date:string,quantity:number,reason='ON_PLAN',note=''){return run(s,{type:'actual',commitmentId:id+projectWeek(s,date),date,quantity,reason,note});}
+function record(s:State,id:string,date:string,quantity:number,reason='RC-10',note=''){return run(s,{type:'actual',commitmentId:id+projectWeek(s,date),date,quantity,reason,note});}
 function recordDay(s:State,date:string,quantities:[number,number]){s=record(s,'A',date,quantities[0]);return record(s,'B',date,quantities[1]);}
 
 test('project-start calendar uses seven days from a Tuesday across year and month boundaries',()=>{
@@ -35,7 +35,7 @@ test('per-cell constraints persist affected week, defer blocking until that week
  assert.equal(blockers(s,s.tasks[0],addDays(start,7)).length,0);
 });
 
-test('second day waits for saved reasons on all activities then saves and replaces exact decimal totals',()=>{
+test('second day waits for saved quantities and required shortfall reasons then saves and replaces exact decimal totals',()=>{
  let s=promiseAll(fixture());
  const next={type:'selectDay',week:start,date:addDays(start,1)};
  assert.throws(()=>run(s,next),/every activity/);

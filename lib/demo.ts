@@ -25,8 +25,8 @@ export function demoState(now:string):State{
  const promise=(id:string,taskId:string,week:string,quantity:number)=>run({
   type:'commit',id,taskId,week,quantity,due:addDays(week,5),owner:'Trade lead',
  });
- const actual=(commitmentId:string,date:string,quantity:number,note='Demonstration entry',reason='ON_PLAN')=>run({type:'actual',commitmentId,date,quantity,note,reason});
- const recordWeek=(week:string,ids:string[],quantities:number[])=>{for(let d=0;d<7;d++){const date=addDays(week,d);if(d)run({type:'selectDay',week,date});ids.forEach((id,i)=>actual(id,date,d===4?quantities[i]:0,'Demonstration entry',id==='cp2'?'RC-07':'ON_PLAN'));}};
+ const actual=(commitmentId:string,date:string,quantity:number,note='Demonstration entry',reason='RC-10')=>run({type:'actual',commitmentId,date,quantity,note,reason});
+ const recordWeek=(week:string,ids:string[],quantities:number[])=>{for(let d=0;d<7;d++){const date=addDays(week,d);if(d)run({type:'selectDay',week,date});ids.forEach((id,i)=>actual(id,date,d===4?quantities[i]:0,'Demonstration entry',id==='cp2'?'RC-07':'RC-10'));}};
  promise('cp-setup','t0',older,40);
  run({type:'freeze',week:older});
  recordWeek(older,['cp-setup'],[40]);

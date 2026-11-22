@@ -69,11 +69,11 @@ test('a constraint raised after freeze blocks successor actuals even when the pr
   state=run(state,{type:'freeze',week:key});
  };
  commit('A',week,2,'2026-11-03');
- state=run(state,{type:'actual',commitmentId:'commit-A',date:week,quantity:2,note:'',reason:'ON_PLAN'});
+ state=run(state,{type:'actual',commitmentId:'commit-A',date:week,quantity:2,note:'',reason:'RC-10'});
  state=run(state,{type:'close',week});
  commit('B',next,3,'2026-11-10');
  state=run(state,{type:'constraint',id:'inspection',taskId:'A',category:'Quality',description:'Handoff inspection reopened',owner:'Lead',due:next});
- const record={type:'actual',commitmentId:'commit-B',date:next,quantity:3,note:'',reason:'ON_PLAN'};
+ const record={type:'actual',commitmentId:'commit-B',date:next,quantity:3,note:'',reason:'RC-10'};
  assert.throws(()=>run(state,record),/constraint blocks.*First: Handoff inspection reopened/);
  state=run(state,{type:'resolve',id:'inspection',date:next,resolution:'Inspection accepted'});
  assert.equal(taskActual(run(state,record),'B'),3);
@@ -83,7 +83,7 @@ test('forecast, decimal corrections, reason codes, closeout and carryover share 
  let state=run(fixture(),parsePhaseCsv(firstLine+'\nA,Drain,Civil,Zone A,Lead,m,10,2026-11-02,2026-11-15,2026-11-15,0,,'));
  state=run(state,{type:'commit',id:'c1',taskId:'A',week,quantity:5,due:'2026-11-06',owner:'Lead'});
  state=run(state,{type:'freeze',week});
- const record=(date:string,quantity:number)=>run(state,{type:'actual',commitmentId:'c1',date,quantity,note:'',reason:'ON_PLAN'});
+ const record=(date:string,quantity:number)=>run(state,{type:'actual',commitmentId:'c1',date,quantity,note:'',reason:'RC-10'});
  const advance=(target:string)=>{while(state.weeks[0].dailyDate!<target){const date=state.weeks[0].dailyDate!;if(!state.entries.some(e=>e.date===date))state=record(date,0);state=run(state,{type:'selectDay',week,date:new Date(Date.parse(date)+86400000).toISOString().slice(0,10)});}};
  state=record(week,1.125);
  advance('2026-11-05');

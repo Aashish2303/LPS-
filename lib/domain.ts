@@ -94,7 +94,8 @@ export function dayComplete(s:State,w:Week,date:string){
  return w.commitments.length>0&&w.commitments.every(c=>{
   const task=findTask(s,c.taskId);
   if(date<task.start)return true;
-  return s.entries.some(e=>e.commitmentId===c.id&&e.date===date&&!!e.reason);
+  const planned=dailyCommitmentPlan(task,w.key,c).days.find(d=>d.date===date)?.quantity??0;
+  return dailyEntryComplete(planned,s.entries.find(e=>e.commitmentId===c.id&&e.date===date));
  });
 }
 export function dailyCursor(w:Week){return w.dailyDate??w.key;}
@@ -166,6 +167,12 @@ export function dailyCommitmentPlan(task:Task,week:string,commitment:Pick<Commit
   return {date,quantity:date<start||date>finish?0:(through(n)-through(n-1))/1000};
  });
  return {start,finish,workingDays,carryover,average:workingDays?commitment.quantity/workingDays:0,days};
+}
+export function dailyEntryComplete(planned:number,entry?:Entry){
+ if(!entry)return false;
+ if(scaled(entry.quantity)>=scaled(planned))return true;
+ const code=reasonCode(entry.reason??'');
+ return !!code&&(code!==otherReason||!!entry.note.trim());
 }
 export function phaseWeekQuantity(task:Task,week:string){
  return (phaseQuantityThrough(task,addDays(week,6))-phaseQuantityThrough(task,addDays(week,-1)))/1000;
@@ -326,17 +333,23 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
  }
  case 'actual':{
   const w=s.weeks.find(w=>w.commitments.some(k=>k.id===c.commitmentId));requireThat(w,'Commitment not found');requireThat(w.status==='active','Start the week before logging; closed weeks are locked');requireThat(c.date>=w.key&&c.date<addDays(w.key,7),'Entry must be inside its commitment week');const k=w.commitments.find(k=>k.id===c.commitmentId)!,t=findTask(s,k.taskId);requireThat(c.date>=t.start||c.quantity===0,'Cannot record work before the activity start');
-  if(w.dailyReasonsRequired){
-   requireThat(c.date<=dailyCursor(w),'Save the current day’s quantities and reasons before advancing');
-   requireThat(c.reason==='ON_PLAN'||!!reasonCode(c.reason??''),'Select a daily reason');
-   requireThat(c.reason!==otherReason||!!c.note.trim(),'Explain the daily reason when selecting RC-16');
-  }
+  let savedReason:string|undefined;
+  if(s.classroom||w.dailyReasonsRequired){
+   requireThat(c.date<=dailyCursor(w),'Save the current day’s quantities and required reasons before advancing');
+   const planned=dailyCommitmentPlan(t,w.key,k).days.find(d=>d.date===c.date)!.quantity;
+   if(scaled(c.quantity)<scaled(planned)){
+    const code=reasonCode(c.reason??'');
+    requireThat(code,'Select a daily reason when actual is below the daily plan');
+    requireThat(code!==otherReason||!!c.note.trim(),'Explain the daily reason when selecting RC-16');
+    savedReason=code;
+   }
+  }else savedReason=c.reason;
   const old=s.entries.find(e=>e.commitmentId===k.id&&e.date===c.date);const others=(scaled(taskActual(s,t.id))-scaled(old?.quantity??0))/1000;requireThat(scaled(others)+scaled(c.quantity)<=scaled(t.total),'Cumulative actual exceeds activity scope');requireThat(scaled(others)+scaled(c.quantity)+scaled(reserved(s,t.id,k.id))<=scaled(t.total),'Actual would consume scope reserved for another open promise');
   if(c.quantity>(old?.quantity??0)){
    const issues=blockers(s,t,c.date);
    requireThat(issues.length===0,'A constraint blocks work on this date: '+issues.join(' · '));
   }
-  const next={commitmentId:k.id,date:c.date,quantity:c.quantity,note:c.note,reason:c.reason};if(old)Object.assign(old,next);else s.entries.push(next);
+  const next={commitmentId:k.id,date:c.date,quantity:c.quantity,note:c.note,reason:savedReason};if(old)Object.assign(old,next);else s.entries.push(next);
   break;
  }
  case 'selectDay':{
@@ -346,7 +359,7 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
   requireThat(c.date>=w.key&&c.date<=addDays(w.key,6),'Choose a day inside this week');
   const cursor=dailyCursor(w);
   requireThat(c.date<=addDays(cursor,1),'Advance one day at a time');
-  if(c.date>cursor)requireThat(dayComplete(s,w,cursor),'Save quantities and select reasons for every activity before the next day');
+  if(c.date>cursor)requireThat(dayComplete(s,w,cursor),'Save quantities and required shortfall reasons for every activity before the next day');
   if(c.date>cursor)w.dailyDate=c.date;
   break;
  }
