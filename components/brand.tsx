@@ -1,1 +1,3 @@
-export default function Brand(){return <div className="brandmark" aria-label="LPS">lps<span aria-hidden="true">.</span></div>}
+export default function Brand(){
+ return <div className="classroombrand" aria-label="Lean Classroom">Lean<span>Classroom</span></div>;
+}

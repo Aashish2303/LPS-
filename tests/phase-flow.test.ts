@@ -56,7 +56,7 @@ test('imported and newly added constraints propagate to all downstream activitie
  assert.equal(ready(state,findTask(state,'A01')),true);
  assert.ok(blockers(state,findTask(state,'A03')).includes('Footing concrete: Footing drawing approval pending'));
  assert.equal(ready(state,findTask(state,'A03')),false);
- assert.throws(()=>run(state,{type:'commit',id:'blocked',taskId:'A02',week:next,quantity:1,due:'2026-11-14',owner:'Lead'}),/Clear constraints/);
+ assert.throws(()=>run(state,{type:'commit',id:'blocked',taskId:'A02',week,quantity:1,due:'2026-11-08',owner:'Lead'}),/Clear constraints/);
  state=run(state,{type:'constraint',id:'test-k',taskId:'A01',category:'Equipment',description:'Excavator delayed',owner:'Lead',due:week});
  assert.ok(blockers(state,findTask(state,'A03')).includes('Foundation excavation: Excavator delayed'));
  assert.equal(ready(state,findTask(state,'B01')),true);
@@ -69,11 +69,11 @@ test('a constraint raised after freeze blocks successor actuals even when the pr
   state=run(state,{type:'freeze',week:key});
  };
  commit('A',week,2,'2026-11-03');
- state=run(state,{type:'actual',commitmentId:'commit-A',date:week,quantity:2,note:''});
+ state=run(state,{type:'actual',commitmentId:'commit-A',date:week,quantity:2,note:'',reason:'ON_PLAN'});
  state=run(state,{type:'close',week});
  commit('B',next,3,'2026-11-10');
  state=run(state,{type:'constraint',id:'inspection',taskId:'A',category:'Quality',description:'Handoff inspection reopened',owner:'Lead',due:next});
- const record={type:'actual',commitmentId:'commit-B',date:'2026-11-10',quantity:3,note:''};
+ const record={type:'actual',commitmentId:'commit-B',date:next,quantity:3,note:'',reason:'ON_PLAN'};
  assert.throws(()=>run(state,record),/constraint blocks.*First: Handoff inspection reopened/);
  state=run(state,{type:'resolve',id:'inspection',date:next,resolution:'Inspection accepted'});
  assert.equal(taskActual(run(state,record),'B'),3);
@@ -83,10 +83,13 @@ test('forecast, decimal corrections, reason codes, closeout and carryover share 
  let state=run(fixture(),parsePhaseCsv(firstLine+'\nA,Drain,Civil,Zone A,Lead,m,10,2026-11-02,2026-11-15,2026-11-15,0,,'));
  state=run(state,{type:'commit',id:'c1',taskId:'A',week,quantity:5,due:'2026-11-06',owner:'Lead'});
  state=run(state,{type:'freeze',week});
- const record=(date:string,quantity:number)=>run(state,{type:'actual',commitmentId:'c1',date,quantity,note:''});
+ const record=(date:string,quantity:number)=>run(state,{type:'actual',commitmentId:'c1',date,quantity,note:'',reason:'ON_PLAN'});
+ const advance=(target:string)=>{while(state.weeks[0].dailyDate!<target){const date=state.weeks[0].dailyDate!;if(!state.entries.some(e=>e.date===date))state=record(date,0);state=run(state,{type:'selectDay',week,date:new Date(Date.parse(date)+86400000).toISOString().slice(0,10)});}};
  state=record(week,1.125);
+ advance('2026-11-05');
  state=record('2026-11-05',1.875);
  state=record('2026-11-05',1.375);
+ advance('2026-11-07');
  state=record('2026-11-07',.25);
  const close=(reason:string,reasonNote='')=>run(state,{type:'close',week,reasons:[
   {commitmentId:'c1',reason,reasonNote,learning:'Check delivery on Thursday'},
@@ -101,7 +104,7 @@ test('forecast, decimal corrections, reason codes, closeout and carryover share 
  assert.equal(closed.commitments[0].reason,'RC-07');
  assert.equal(commitmentActual(state,closed.commitments[0],closed.commitments[0].due),2.5);
  assert.equal(taskActual(state,'A'),2.75);
- assert.equal(state.entries.length,3);
+ assert.equal(state.entries.length,6);
  assert.equal(metrics(state,closed).ppc,0);
  assert.equal(weekAllocations(state,week)[0].quantity,5);
  const carried=weekAllocations(state,next)[0];

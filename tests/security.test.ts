@@ -93,5 +93,5 @@ test('routes accept only known sections and redirect targets cannot leave the ap
  assert.deepEqual(parseRoute('/demo/daily'),{kind:'demo',view:'daily'});assert.equal(parseRoute('/projects/bad/weekly'),null);assert.equal(parseRoute('/demo/admin'),null);
  for(const value of ['https://evil.test','//evil.test','/\\evil.test','/login','javascript:alert(1)',path+'%0a'])assert.equal(safeReturnPath(value),'/');
  assert.equal(safeReturnPath(path+'?week=2026-10-19&next=https://evil.test'),path+'?week=2026-10-19');
- assert.equal(validWeek('2026-10-19'),true);assert.equal(validWeek('2026-10-20'),false);assert.equal(validWeek('2026-02-30'),false);
+ assert.equal(validWeek('2026-10-19'),true);assert.equal(validWeek('2026-10-20'),true);assert.equal(validWeek('2026-02-30'),false);
 });

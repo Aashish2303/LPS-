@@ -12,5 +12,5 @@ export async function POST(req:Request){let client;try{
  // Serialize creation for this owner so simultaneous requests cannot exceed the cap.
  await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[u.id]);
  const count=await client.query('select count(*) from lps_projects where owner_id=$1',[u.id]);if(Number(count.rows[0].count)>=20)throw new DomainError('Maximum 20 projects per account');
- const id=crypto.randomUUID(),state=emptyState(data.name);await client.query('insert into lps_projects(id,owner_id,state) values($1,$2,$3)',[id,u.id,JSON.stringify(state)]);await client.query('commit');return Response.json({id,state,version:1,role:'owner'},{headers:privateHeaders});
+ const id=crypto.randomUUID(),state=emptyState(data.name);state.classroom=true;state.calendarStart=state.start;await client.query('insert into lps_projects(id,owner_id,state) values($1,$2,$3)',[id,u.id,JSON.stringify(state)]);await client.query('commit');return Response.json({id,state,version:1,role:'owner'},{headers:privateHeaders});
  }catch(e){if(client)await client.query('rollback').catch(()=>{});return failure(e);}finally{client?.release();}}

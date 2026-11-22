@@ -1,7 +1,7 @@
-import { emptyState,applyCommand,monday,addDays,type Command,type State } from './domain';
+import { emptyState,applyCommand,weekAllocations,addDays,type Command,type State } from './domain';
 
 export function demoState(now:string):State{
- const current=monday(now);
+ const current=addDays(now,-3);
  const prev=addDays(current,-7);
  const older=addDays(current,-14);
  let state=emptyState('Academic Block · Phase 01',older);
@@ -25,20 +25,21 @@ export function demoState(now:string):State{
  const promise=(id:string,taskId:string,week:string,quantity:number)=>run({
   type:'commit',id,taskId,week,quantity,due:addDays(week,5),owner:'Trade lead',
  });
- const actual=(commitmentId:string,date:string,quantity:number,note='Demonstration entry')=>run({type:'actual',commitmentId,date,quantity,note});
+ const actual=(commitmentId:string,date:string,quantity:number,note='Demonstration entry',reason='ON_PLAN')=>run({type:'actual',commitmentId,date,quantity,note,reason});
+ const recordWeek=(week:string,ids:string[],quantities:number[])=>{for(let d=0;d<7;d++){const date=addDays(week,d);if(d)run({type:'selectDay',week,date});ids.forEach((id,i)=>actual(id,date,d===4?quantities[i]:0,'Demonstration entry',id==='cp2'?'RC-07':'ON_PLAN'));}};
  promise('cp-setup','t0',older,40);
  run({type:'freeze',week:older});
- actual('cp-setup',addDays(older,5),40);
+ recordWeek(older,['cp-setup'],[40]);
  run({type:'close',week:older});
 
  const ids=['t1','t2','t3'];
  const quantities=[60,12,150];
  ids.forEach((taskId,i)=>promise('cp'+i,taskId,prev,quantities[i]));
  run({type:'freeze',week:prev});
- [60,12,100].forEach((quantity,i)=>actual('cp'+i,addDays(prev,4),quantity));
+ recordWeek(prev,['cp0','cp1','cp2'],[60,12,100]);
  run({type:'close',week:prev,reasons:[{commitmentId:'cp2',reason:'RC-07',learning:'Confirm delivery with supplier 48 hours before the promise.'}]});
 
- ids.forEach((taskId,i)=>promise('cc'+i,taskId,current,quantities[i]));
+ ids.forEach((taskId,i)=>promise('cc'+i,taskId,current,weekAllocations(state,current).find(a=>a.taskId===taskId)!.quantity));
  run({type:'freeze',week:current});
  actual('cc0',current,20,'Pump pour completed');
  actual('cc1',current,4,'Inspection accepted');

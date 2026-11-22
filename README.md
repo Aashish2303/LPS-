@@ -1,4 +1,4 @@
-# LPS · Lean Project Delivery
+# Lean Classroom · Construction Planning Lab
 
 A new Next.js application with Neon PostgreSQL, Managed Better Auth, project roles, and a command-based planning engine. No Sites service is used.
 
@@ -12,9 +12,9 @@ Checks: `npm test`, `npm run check`, `npm run build`. Commit the package lock. `
 
 1. Create a private project and open **Phase Plan**. Use **CSV template** to download a model with dates, float, predecessors and an example constraint.
 2. Import the CSV. Imports are atomic, accept up to 500 activities per file, and reject duplicate IDs and invalid dependencies. The earliest early start and latest late finish across the phase schedule set the project dates. Where a late finish is missing, the early finish is used.
-3. Open **Lookahead**. The next six weeks automatically show the quantities scheduled within each activity’s inclusive early date range. The split uses calendar-day overlap and integer thousandths so the weeks add up to the original scope. A week following closeout includes the remaining scope due by its end, after deducting the actual quantity recorded through the preceding Sunday.
+3. Open **Lookahead**. The next six weeks automatically show the quantities scheduled within each activity’s inclusive early date range. The split uses calendar-day overlap and integer thousandths so the weeks add up to the original scope. A week following closeout includes the remaining scope due by its end, after deducting the actual quantity recorded through the preceding week end.
 4. Add or review constraints in Lookahead and resolve them with evidence in the Constraint log. Open constraints block the activity and all its downstream dependencies. Predecessor handoffs must also be complete before a successor can be promised.
-5. Review **Weekly work plan**, select ready work, confirm the promised quantity and due date, then start the week. This freezes the promises and the forecast used for readiness metrics.
+5. Review **Weekly work plan**, select ready work, confirm the fixed forecast quantity, owner and due date, then start the week. This freezes the promises and the forecast used for readiness metrics.
 6. In **Daily check-in**, enter the quantity completed on each date in the active week, including future dates for exercises. Saving the same commitment/date replaces the previous entry. Weekly and cumulative actuals derive from that ledger.
 7. When you finish the practice week, choose a primary reason code and an improvement action for each missed promise. RC-16 also requires a reason note. **Save & lock week** records the reasons and closes the week in one transaction. You can close an active week on any day.
 8. **Trends & metrics** shows the weekly PPC line and results table, activity results for the selected week, and the distribution and top three reasons for missed promises in closed weeks.
@@ -23,7 +23,7 @@ The CSV template uses `id,name,trade,area,owner,unit,total,early_start,early_fin
 
 ## Measurement conventions
 
-- Weeks are real Monday dates (`YYYY-MM-DD`), Monday–Sunday, in Asia/Kolkata.
+- Weeks are seven calendar days anchored to the project start date (`YYYY-MM-DD`). The exercise advances after closeout, independently of wall-clock dates. Existing recorded weekly boundaries are preserved when older projects are upgraded.
 - Quantities allow at most three decimals. Calculations sum integer thousandths; unlike units are never aggregated.
 - PPC is count of promises fully achieved by their original due date / original promise count. Late work remains in cumulative scope but misses PPC. Empty denominators display no score.
 - Project reliability uses total on-time completions / total frozen commitments across closed weeks, not a mean of percentages.
@@ -66,7 +66,7 @@ This is a tested implementation for review, not a claim of conference or product
 
 ## Routing and security changes
 
-- Project pages use `/projects/{uuid}/{section}`. Demo pages use `/demo/{section}`. The selected Monday is retained in `?week=YYYY-MM-DD`. Reload, deep links and browser back/forward use the URL. The legacy `/?demo=1` link redirects to `/demo/overview`. Unknown sections return 404.
+- Project pages use `/projects/{uuid}/{section}`. Demo pages use `/demo/{section}`. The selected review week is retained in `?week=YYYY-MM-DD`. Reload, deep links and browser back/forward use the URL. The legacy `/?demo=1` link redirects to `/demo/overview`. Unknown sections return 404.
 - Sign-in, signup, recovery and verification use `/login`, `/signup`, `/forgot-password`, `/reset-password` and `/verify-email`. An unauthenticated project URL redirects to sign-in with a validated internal return path. API authorization runs independently of page routing.
 - All mutation requests require an exact Origin and JSON content type. The actual streamed body is capped at 8 KiB for auth, 4 KiB for project creation and 512 KiB for project commands. Strict schemas reject unexpected fields, unsupported actions, invalid roles, identifiers, dates, quantities and import commands.
 - Auth forwarding is restricted to the email/password, session, signout and OTP endpoints used by this UI. Unused provider admin, account-deletion and arbitrary proxy routes are not exposed through the app.
@@ -79,3 +79,15 @@ This is a tested implementation for review, not a claim of conference or product
 - Project creation is serialized per owner so simultaneous requests cannot bypass the 20-project cap. Existing owner/editor/viewer checks, optimistic versions and transactional audit writes remain in place.
 
 Validation for this change: 35 domain/security tests and the optimized build pass. Local HTTP checks cover public routes, unknown sections, legacy redirect, sign-in return routing and anonymous API denial. The isolated database verifies limit persistence, sixth-attempt denial, expiry reset and RLS. Real mailbox delivery and a complete signed-in two-account browser flow still need acceptance testing; synthetic/mock checks are not evidence of email delivery.
+
+## Classroom workflow · 22 November 2026
+
+- Lean Classroom is the product name. Repository, database table names and deployment hostname retain their existing identifiers for continuity.
+- Lookahead is the current exercise week plus five subsequent seven-day periods, with no date controls. Closing a week opens the next Lookahead automatically.
+- Every activity/week cell can save a constraint scoped to that week. It blocks that activity and downstream work from the affected week until resolved. Imported unscoped constraints apply throughout the exercise until resolved.
+- Weekly promises equal the complete forecast quantity. Quantities cannot be edited in the promise dialog or lowered through a promise command. Starting a week validates the forecast again and freezes it.
+- New and upgraded live projects require a daily reason (Work as planned or RC-01–RC-16) on every saved daily quantity, including zero. RC-16 also requires an explanation. Advancing the exercise day requires saved entries and reasons for every started activity; completed or inactive activities can use zero.
+- Days advance through explicit buttons, with a server-validated cursor. Saved days can be reviewed and corrected until closeout. Same-day saves replace the entry rather than adding it twice. Daily reasons are available alongside weekly results in Trends & metrics.
+- Start and closeout allow simulated future weeks. An empty or fully blocked week can be closed, with PPC displayed as unavailable rather than a fabricated zero.
+- IIT Madras and ILCE images are served locally from the institutions’ public logo assets. Their presence does not assert endorsement.
+- Existing closed weeks and their records are kept immutable. Older projects with recorded weeks keep those boundaries; new projects and imports without recorded history use the project start.

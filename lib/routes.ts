@@ -20,4 +20,4 @@ export function safeReturnPath(value:string|null){
  if(!value||value.length>500||!value.startsWith('/')||value.startsWith('//')||/[\\\x00-\x20]/.test(value))return '/';
  try{const url=new URL(value,'https://lps.invalid');const route=parseRoute(url.pathname);if(url.origin!=='https://lps.invalid'||!route||route.kind!=='project')return '/';const week=url.searchParams.get('week');return url.pathname+(validWeek(week)?'?week='+week:'');}catch{return '/';}
 }
-export function validWeek(value:string|null):value is string{if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const d=new Date(value+'T00:00:00Z');return Number.isFinite(+d)&&d.toISOString().slice(0,10)===value&&d.getUTCDay()===1;}
+export function validWeek(value:string|null):value is string{if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const d=new Date(value+'T00:00:00Z');return Number.isFinite(+d)&&d.toISOString().slice(0,10)===value;}

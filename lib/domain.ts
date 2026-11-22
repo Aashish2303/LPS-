@@ -4,12 +4,12 @@ import { otherReason, reasonCode } from './reason-codes';
 export type Milestone={id:string;name:string;date:string;owner:string};
 export type Schedule={lateStart?:string;lateFinish?:string;float?:number;importedOn?:string};
 export type Task={id:string;name:string;trade:string;area:string;owner:string;unit:string;total:number;start:string;finish:string;predecessors:string[];milestoneId:string;pull:boolean;schedule?:Schedule};
-export type Constraint={id:string;taskId:string;category:string;description:string;owner:string;due:string;resolvedOn:string|null;resolution:string};
+export type Constraint={id:string;taskId:string;category:string;description:string;owner:string;due:string;week?:string;resolvedOn:string|null;resolution:string};
 export type Allocation={id:string;taskId:string;week:string;quantity:number;createdOn:string;carry?:number};
 export type Commitment={id:string;taskId:string;quantity:number;due:string;owner:string;reason:string;reasonNote?:string;learning:string;anticipated:boolean};
-export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[]};
-export type Entry={commitmentId:string;date:string;quantity:number;note:string};
-export type State={schema:1;name:string;code:string;client:string;location:string;start:string;finish:string;trades:string[];areas:string[];milestones:Milestone[];tasks:Task[];constraints:Constraint[];allocations:Allocation[];weeks:Week[];entries:Entry[]};
+export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[];dailyDate?:string;dailyReasonsRequired?:boolean};
+export type Entry={commitmentId:string;date:string;quantity:number;note:string;reason?:string};
+export type State={schema:1;calendarStart?:string;classroom?:boolean;name:string;code:string;client:string;location:string;start:string;finish:string;trades:string[];areas:string[];milestones:Milestone[];tasks:Task[];constraints:Constraint[];allocations:Allocation[];weeks:Week[];entries:Entry[]};
 export class DomainError extends Error { constructor(message:string,public status=422){super(message);} }
 export const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>{const d=new Date(v+'T00:00:00Z');return !isNaN(+d)&&d.toISOString().slice(0,10)===v;},'Enter a valid calendar date');
 const text=z.string().trim().min(1).max(200);
@@ -38,14 +38,15 @@ export const commandSchema=z.discriminatedUnion('type',[
  z.strictObject({type:z.literal('editTask'),task:z.strictObject(taskFields)}),
  z.strictObject({type:z.literal('importTasks'),tasks:z.array(importedTask).min(1).max(500)}),
  z.strictObject({type:z.literal('pull'),taskId:id,selected:z.boolean()}),
- z.strictObject({type:z.literal('constraint'),id:id,taskId:id,category:text,description:text,owner:text,due:dateSchema}),
+ z.strictObject({type:z.literal('constraint'),id:id,taskId:id,category:text,description:text,owner:text,due:dateSchema,week:dateSchema.optional()}),
  z.strictObject({type:z.literal('resolve'),id:id,resolution:text,date:dateSchema}),
  z.strictObject({type:z.literal('allocate'),id:id,taskId:id,week:dateSchema,quantity:qty}),
  z.strictObject({type:z.literal('unallocate'),id:id}),
  z.strictObject({type:z.literal('commit'),id:id,taskId:id,week:dateSchema,quantity:qty,due:dateSchema,owner:text}),
  z.strictObject({type:z.literal('uncommit'),id:id,week:dateSchema}),
  z.strictObject({type:z.literal('freeze'),week:dateSchema}),
- z.strictObject({type:z.literal('actual'),commitmentId:id,date:dateSchema,quantity:qty.or(z.literal(0)),note:z.string().max(1000)}),
+ z.strictObject({type:z.literal('actual'),commitmentId:id,date:dateSchema,quantity:qty.or(z.literal(0)),note:z.string().max(1000),reason:z.string().max(30).optional()}),
+ z.strictObject({type:z.literal('selectDay'),week:dateSchema,date:dateSchema}),
  z.strictObject({type:z.literal('variance'),...varianceFields}),
  z.strictObject({type:z.literal('close'),week:dateSchema,reasons:z.array(z.strictObject(varianceFields)).max(1000).optional()})
 ]);
@@ -53,11 +54,52 @@ export type Command=z.infer<typeof commandSchema>;
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export const addDays=(d:string,n:number)=>new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 export function monday(d:string){dateSchema.parse(d);const dow=new Date(d+'T00:00:00Z').getUTCDay();return addDays(d,-((dow+6)%7));}
+export function calendarAnchor(s:State){
+ if(s.calendarStart)return s.calendarStart;
+ const existing=s.weeks.map(w=>w.key).sort()[0];
+ return existing??(s.classroom?s.start:monday(s.start));
+}
+export function projectWeek(s:State,date:string){
+ dateSchema.parse(date);
+ const anchor=calendarAnchor(s);
+ const days=(Date.parse(date)-Date.parse(anchor))/86400000;
+ return addDays(anchor,Math.floor(days/7)*7);
+}
+export function weekNumber(s:State,week:string){
+ return Math.round((Date.parse(week)-Date.parse(calendarAnchor(s)))/604800000)+1;
+}
+export function currentExerciseWeek(s:State){
+ const active=s.weeks.filter(w=>w.status==='active').map(w=>w.key).sort()[0];
+ if(active)return active;
+ let key=calendarAnchor(s);
+ const closed=new Set(s.weeks.filter(w=>w.status==='closed').map(w=>w.key));
+ while(closed.has(key))key=addDays(key,7);
+ return key;
+}
+// Upgrade old aggregates without moving any already recorded weekly boundary.
+export function classroomState(input:State):State{
+ const s=structuredClone(input);
+ if(!s.classroom){s.calendarStart=s.weeks.map(w=>w.key).sort()[0]??s.start;s.classroom=true;}
+ for(const w of s.weeks)if(w.status==='active'){w.dailyReasonsRequired=true;w.dailyDate??=w.key;}
+ return s;
+}
+function checkWeek(s:State,key:string){
+ if(!s.classroom){requireThat(monday(key)===key,'Weeks start on Monday');return;}
+ requireThat(key>=calendarAnchor(s)&&projectWeek(s,key)===key,'Use a seven-day week from the project start');
+}
+export function dayComplete(s:State,w:Week,date:string){
+ return w.commitments.every(c=>{
+  const task=findTask(s,c.taskId);
+  if(date<task.start)return true;
+  return s.entries.some(e=>e.commitmentId===c.id&&e.date===date&&!!e.reason);
+ });
+}
+export function dailyCursor(w:Week){return w.dailyDate??w.key;}
 const scaled=(n:number)=>Math.round(n*1000);
 export const sum=(xs:number[])=>xs.reduce((s,n)=>s+scaled(n),0)/1000;
 export const fmt=(n:number)=>n.toLocaleString('en-IN',{maximumFractionDigits:3});
 export const pct=(a:number,b:number)=>b>0?Math.round(a/b*1000)/10:null;
-export function emptyState(name='Untitled project',date=today()):State{return {schema:1,name,code:'LPS-001',client:'',location:'',start:date,finish:addDays(date,180),trades:['Civil','Structure','MEP','Finishes'],areas:['Zone A','Zone B'],milestones:[],tasks:[],constraints:[],allocations:[],weeks:[],entries:[]};}
+export function emptyState(name='Untitled project',date=today()):State{return {schema:1,name,code:'LC-001',client:'',location:'',start:date,finish:addDays(date,180),trades:['Civil','Structure','MEP','Finishes'],areas:['Zone A','Zone B'],milestones:[],tasks:[],constraints:[],allocations:[],weeks:[],entries:[]};}
 function requireThat(ok:unknown,msg:string):asserts ok{if(!ok)throw new DomainError(msg);}
 export function findTask(s:State,id:string){const t=s.tasks.find(t=>t.id===id);requireThat(t,'Activity not found');return t;}
 export function commitmentActual(s:State,c:Commitment,through='9999-12-31'){return sum(s.entries.filter(e=>e.commitmentId===c.id&&e.date<=through).map(e=>e.quantity));}
@@ -74,7 +116,7 @@ export function blockers(s:State,t:Task,date?:string){
   pending.push(...task.predecessors);
  }
  const messages=s.constraints.filter(c=>
-  (c.taskId===t.id||ancestors.has(c.taskId))&&(!c.resolvedOn||(date&&c.resolvedOn>date)),
+  (c.taskId===t.id||ancestors.has(c.taskId))&&(!c.week||!date||c.week<=date)&&(!c.resolvedOn||(date&&c.resolvedOn>date)),
  ).map(c=>c.taskId===t.id?c.description:taskById.get(c.taskId)?.name+': '+c.description);
  const through=date?addDays(date,-1):undefined;
  for(const pred of ancestors.values()){
@@ -125,7 +167,7 @@ export function forecastDue(task:Task,week:string){
  const sunday=addDays(week,6);
  return task.finish<week?sunday:task.finish<sunday?task.finish:sunday;
 }
-function getWeek(s:State,key:string,create=false){requireThat(monday(key)===key,'Weeks start on Monday');let w=s.weeks.find(w=>w.key===key);if(!w&&create){w={key,status:'draft',commitments:[],frozenOn:null,closedOn:null,readyAtFreeze:0,plannedAtFreeze:0};s.weeks.push(w);}requireThat(w,'Create commitments before starting this week');return w;}
+function getWeek(s:State,key:string,create=false){checkWeek(s,key);let w=s.weeks.find(w=>w.key===key);if(!w&&create){w={key,status:'draft',commitments:[],frozenOn:null,closedOn:null,readyAtFreeze:0,plannedAtFreeze:0};s.weeks.push(w);}requireThat(w,'Create commitments before starting this week');return w;}
 export function metrics(s:State,w:Week){const done=w.commitments.filter(c=>scaled(commitmentActual(s,c,c.due))>=scaled(c.quantity)).length;return {total:w.commitments.length,done,ppc:pct(done,w.commitments.length),ta:pct(w.commitments.filter(c=>c.anticipated).length,w.commitments.length),tmr:w.frozenOn?pct(w.readyAtFreeze,w.plannedAtFreeze):null};}
 function reserved(s:State,taskId:string,except?:string){return sum(s.weeks.filter(w=>w.status!=='closed').flatMap(w=>w.commitments).filter(c=>c.taskId===taskId&&c.id!==except).map(c=>Math.max(0,(scaled(c.quantity)-scaled(commitmentActual(s,c)))/1000)))}
 export function available(s:State,t:Task){return (scaled(remaining(s,t))-scaled(reserved(s,t.id)))/1000;}
@@ -161,7 +203,7 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
  const parsed=commandSchema.safeParse(raw);if(!parsed.success)throw new DomainError(parsed.error.issues.map(x=>x.path.join('.')+': '+x.message).join('; '));
  const c=parsed.data,s=structuredClone(input);
  switch(c.type){
- case 'settings':requireThat(c.finish>=c.start,'Project finish must follow its start');requireThat(s.tasks.every(t=>t.start>=c.start&&(t.schedule?.lateFinish??t.finish)<=c.finish),'Project dates must contain every activity');requireThat(s.tasks.every(t=>c.trades.includes(t.trade)&&c.areas.includes(t.area)),'Keep trades and areas used by activities');Object.assign(s,{name:c.name,code:c.code,client:c.client,location:c.location,start:c.start,finish:c.finish,trades:[...new Set(c.trades)],areas:[...new Set(c.areas)]});break;
+ case 'settings':requireThat(!s.weeks.some(w=>w.status!=='draft')||c.start===s.start,'Project start is fixed after a week starts');if(s.classroom&&!s.weeks.some(w=>w.status!=='draft'))s.calendarStart=c.start;requireThat(c.finish>=c.start,'Project finish must follow its start');requireThat(s.tasks.every(t=>t.start>=c.start&&(t.schedule?.lateFinish??t.finish)<=c.finish),'Project dates must contain every activity');requireThat(s.tasks.every(t=>c.trades.includes(t.trade)&&c.areas.includes(t.area)),'Keep trades and areas used by activities');Object.assign(s,{name:c.name,code:c.code,client:c.client,location:c.location,start:c.start,finish:c.finish,trades:[...new Set(c.trades)],areas:[...new Set(c.areas)]});break;
  case 'importTasks':{
   const ids=new Set(s.tasks.map(task=>task.id));
   for(const row of c.tasks){
@@ -186,7 +228,9 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
   for(const row of c.tasks)for(const predecessor of row.predecessors){
    requireThat(ids.has(predecessor),row.id+' references unknown predecessor '+predecessor);
   }
-  Object.assign(s,phaseDateRange(s.tasks),{trades,areas});
+  const range=phaseDateRange(s.tasks);
+  if(!s.weeks.some(w=>w.status!=='draft')){s.calendarStart=range.start;s.classroom=true;}
+  Object.assign(s,range,{trades,areas});
   network(s);
   break;
  }
@@ -197,32 +241,47 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
  }
  case 'editTask':{const old=findTask(s,c.task.id);requireThat(!s.weeks.some(w=>w.commitments.some(k=>k.taskId===old.id)),'An activity with a promise has a frozen scope and baseline');requireThat(!s.allocations.some(a=>a.taskId===old.id),'Remove forecast allocations before editing this activity');const next=structuredClone(s);next.tasks=next.tasks.filter(t=>t.id!==old.id);return applyCommand(next,{type:'task',...c.task},now);}
  case 'pull':{const t=findTask(s,c.taskId);requireThat(c.selected||!s.allocations.some(a=>a.taskId===t.id)&&!s.weeks.some(w=>w.commitments.some(k=>k.taskId===t.id)),'An allocated or committed activity must remain in the pull plan');t.pull=c.selected;break;}
- case 'constraint':findTask(s,c.taskId);requireThat(!s.constraints.some(k=>k.id===c.id),'Constraint already exists');s.constraints.push({id:c.id,taskId:c.taskId,category:c.category,description:c.description,owner:c.owner,due:c.due,resolvedOn:null,resolution:''});break;
- case 'resolve':{const k=s.constraints.find(k=>k.id===c.id);requireThat(k,'Constraint not found');requireThat(!k.resolvedOn,'Constraint is already resolved');requireThat(c.date<=now,'Resolution cannot be future dated');k.resolvedOn=c.date;k.resolution=c.resolution;break;}
+ case 'constraint':if(c.week){checkWeek(s,c.week);requireThat(!s.weeks.some(w=>w.key===c.week&&w.status==='closed'),'Closed weeks are locked');}findTask(s,c.taskId);requireThat(!s.constraints.some(k=>k.id===c.id),'Constraint already exists');s.constraints.push({id:c.id,taskId:c.taskId,category:c.category,description:c.description,owner:c.owner,due:c.due,week:c.week,resolvedOn:null,resolution:''});break;
+ case 'resolve':{const k=s.constraints.find(k=>k.id===c.id);requireThat(k,'Constraint not found');requireThat(!k.resolvedOn,'Constraint is already resolved');k.resolvedOn=c.date;k.resolution=c.resolution;break;}
  case 'allocate':{
-  requireThat(monday(c.week)===c.week,'Weeks start on Monday');const t=findTask(s,c.taskId);requireThat(c.week<=t.finish&&addDays(c.week,6)>=t.start,'Allocation week must overlap the activity schedule');requireThat(!s.weeks.some(w=>w.key===c.week&&w.status!=='draft'),'Started weeks cannot be replanned');const existing=s.allocations.find(a=>a.id===c.id);requireThat(!existing||existing.taskId===c.taskId&&existing.week===c.week,'An allocation cannot be moved to another activity or week');requireThat(!s.allocations.some(a=>a.id!==c.id&&a.taskId===t.id&&a.week===c.week),'This activity already has an allocation for that week');const promise=s.weeks.find(w=>w.key===c.week)?.commitments.find(k=>k.taskId===t.id);requireThat(!promise||c.quantity>=promise.quantity,'Allocation cannot be less than its draft promise');
+  checkWeek(s,c.week);const t=findTask(s,c.taskId);requireThat(c.week<=t.finish&&addDays(c.week,6)>=t.start,'Allocation week must overlap the activity schedule');requireThat(!s.weeks.some(w=>w.key===c.week&&w.status!=='draft'),'Started weeks cannot be replanned');const existing=s.allocations.find(a=>a.id===c.id);requireThat(!existing||existing.taskId===c.taskId&&existing.week===c.week,'An allocation cannot be moved to another activity or week');requireThat(!s.allocations.some(a=>a.id!==c.id&&a.taskId===t.id&&a.week===c.week),'This activity already has an allocation for that week');const promise=s.weeks.find(w=>w.key===c.week)?.commitments.find(k=>k.taskId===t.id);requireThat(!promise||c.quantity>=promise.quantity,'Allocation cannot be less than its draft promise');
   const pending=sum(s.allocations.filter(a=>a.id!==c.id&&a.taskId===t.id&&!s.weeks.some(w=>w.key===a.week&&w.status==='closed')).map(a=>{const comm=s.weeks.find(w=>w.key===a.week)?.commitments.find(k=>k.taskId===t.id);return Math.max(0,(scaled(a.quantity)-scaled(comm?commitmentActual(s,comm):0))/1000);}));
   requireThat(scaled(c.quantity)+scaled(pending)<=scaled(remaining(s,t)),'Lookahead allocations exceed remaining scope');if(existing)existing.quantity=c.quantity;else s.allocations.push({id:c.id,taskId:t.id,week:c.week,quantity:c.quantity,createdOn:now});break;
  }
  case 'unallocate':{const a=s.allocations.find(x=>x.id===c.id);requireThat(a,'Allocation not found');const w=s.weeks.find(w=>w.key===a.week);requireThat(!w||w.status==='draft','Started weeks cannot be replanned');requireThat(!w?.commitments.some(k=>k.taskId===a.taskId),'Remove the draft promise before its allocation');s.allocations=s.allocations.filter(x=>x.id!==c.id);break;}
  case 'commit':{
-  const t=findTask(s,c.taskId),w=getWeek(s,c.week,true);requireThat(w.status==='draft','Commitments are frozen once a week starts');requireThat(!s.weeks.some(w=>w.commitments.some(k=>k.id===c.id)),'Commitment already exists');requireThat(!w.commitments.some(k=>k.taskId===t.id),'Only one commitment per activity per week');requireThat(ready(s,t,c.due),'Clear constraints and complete predecessor handoffs first');
-  const a=weekAllocations(s,c.week).find(a=>a.taskId===t.id);requireThat(a,'No forecast quantity is scheduled for this activity in this week');requireThat(scaled(c.quantity)<=scaled(a.quantity),'Promise cannot exceed the lookahead allocation');requireThat(c.due>=c.week&&c.due<addDays(c.week,7)&&c.due>=t.start&&c.due<=forecastDue(t,c.week),'Promise due date must be inside its week and activity schedule');requireThat(scaled(c.quantity)<=scaled(available(s,t)),'Promise exceeds unreserved remaining scope');
+  const t=findTask(s,c.taskId),w=getWeek(s,c.week,true);if(s.classroom)requireThat(c.week===currentExerciseWeek(s),'Make promises for the current exercise week');requireThat(w.status==='draft','Commitments are frozen once a week starts');requireThat(!s.weeks.some(w=>w.commitments.some(k=>k.id===c.id)),'Commitment already exists');requireThat(!w.commitments.some(k=>k.taskId===t.id),'Only one commitment per activity per week');requireThat(ready(s,t,c.due),'Clear constraints and complete predecessor handoffs first');
+  const a=weekAllocations(s,c.week).find(a=>a.taskId===t.id);requireThat(a,'No forecast quantity is scheduled for this activity in this week');requireThat(scaled(c.quantity)===scaled(a.quantity),'Promise must equal the full weekly forecast quantity');requireThat(c.due>=c.week&&c.due<addDays(c.week,7)&&c.due>=t.start&&c.due<=forecastDue(t,c.week),'Promise due date must be inside its week and activity schedule');requireThat(scaled(c.quantity)<=scaled(available(s,t)),'Promise exceeds unreserved remaining scope');
   w.commitments.push({id:c.id,taskId:t.id,quantity:c.quantity,due:c.due,owner:c.owner,reason:'',learning:'',anticipated:a.createdOn<c.week});break;
  }
  case 'uncommit':{const w=getWeek(s,c.week);requireThat(w.status==='draft','Frozen promises cannot be removed');requireThat(w.commitments.some(k=>k.id===c.id),'Commitment not found');w.commitments=w.commitments.filter(k=>k.id!==c.id);break;}
  case 'freeze':{
-  const w=getWeek(s,c.week);requireThat(w.status==='draft','Week already started');requireThat(w.commitments.length>0,'Add at least one promise');requireThat(c.week<=now,'Cannot start a future week');requireThat(w.commitments.every(k=>ready(s,findTask(s,k.taskId),k.due)),'A promised activity is no longer ready');const items=weekAllocations(s,w.key);requireThat(w.commitments.every(k=>items.some(a=>a.taskId===k.taskId&&scaled(a.quantity)>=scaled(k.quantity))),'A forecast has changed. Remove and remake the affected promise before starting the week');w.plan=items;w.status='active';w.frozenOn=now;w.plannedAtFreeze=items.length;w.readyAtFreeze=items.filter(a=>ready(s,findTask(s,a.taskId),forecastDue(findTask(s,a.taskId),w.key))).length;break;
+  const w=getWeek(s,c.week,true);requireThat(w.status==='draft','Week already started');if(s.classroom)requireThat(c.week===currentExerciseWeek(s),'Close the current exercise week before starting the next week');requireThat(w.commitments.every(k=>ready(s,findTask(s,k.taskId),k.due)),'A promised activity is no longer ready');const items=weekAllocations(s,w.key);requireThat(w.commitments.every(k=>items.some(a=>a.taskId===k.taskId&&scaled(a.quantity)===scaled(k.quantity))),'A forecast has changed. Remove and remake the affected promise before starting the week');w.plan=items;w.dailyDate=w.key;w.dailyReasonsRequired=!!s.classroom;w.status='active';w.frozenOn=now;w.plannedAtFreeze=items.length;w.readyAtFreeze=items.filter(a=>ready(s,findTask(s,a.taskId),forecastDue(findTask(s,a.taskId),w.key))).length;break;
  }
  case 'actual':{
-  const w=s.weeks.find(w=>w.commitments.some(k=>k.id===c.commitmentId));requireThat(w,'Commitment not found');requireThat(w.status==='active','Start the week before logging; closed weeks are locked');requireThat(c.date>=w.key&&c.date<addDays(w.key,7),'Entry must be inside its commitment week');const k=w.commitments.find(k=>k.id===c.commitmentId)!,t=findTask(s,k.taskId);requireThat(c.date>=t.start,'Cannot record work before the activity start');
+  const w=s.weeks.find(w=>w.commitments.some(k=>k.id===c.commitmentId));requireThat(w,'Commitment not found');requireThat(w.status==='active','Start the week before logging; closed weeks are locked');requireThat(c.date>=w.key&&c.date<addDays(w.key,7),'Entry must be inside its commitment week');const k=w.commitments.find(k=>k.id===c.commitmentId)!,t=findTask(s,k.taskId);requireThat(c.date>=t.start||c.quantity===0,'Cannot record work before the activity start');
+  if(w.dailyReasonsRequired){
+   requireThat(c.date<=dailyCursor(w),'Save the current day’s quantities and reasons before advancing');
+   requireThat(c.reason==='ON_PLAN'||!!reasonCode(c.reason??''),'Select a daily reason');
+   requireThat(c.reason!==otherReason||!!c.note.trim(),'Explain the daily reason when selecting RC-16');
+  }
   const old=s.entries.find(e=>e.commitmentId===k.id&&e.date===c.date);const others=(scaled(taskActual(s,t.id))-scaled(old?.quantity??0))/1000;requireThat(scaled(others)+scaled(c.quantity)<=scaled(t.total),'Cumulative actual exceeds activity scope');requireThat(scaled(others)+scaled(c.quantity)+scaled(reserved(s,t.id,k.id))<=scaled(t.total),'Actual would consume scope reserved for another open promise');
   if(c.quantity>(old?.quantity??0)){
    const issues=blockers(s,t,c.date);
    requireThat(issues.length===0,(issues[0]?.startsWith('Handoff:')?'Finish-to-start handoff must be complete before this date: ':'A constraint blocks work on this date: ')+issues.join(' · '));
   }
-  const next={commitmentId:k.id,date:c.date,quantity:c.quantity,note:c.note};if(old)Object.assign(old,next);else s.entries.push(next);
+  const next={commitmentId:k.id,date:c.date,quantity:c.quantity,note:c.note,reason:c.reason};if(old)Object.assign(old,next);else s.entries.push(next);
   for(const successor of s.tasks.filter(x=>x.predecessors.includes(t.id))){const ids=new Set(s.weeks.flatMap(w=>w.commitments).filter(k=>k.taskId===successor.id).map(k=>k.id));for(const e of s.entries.filter(e=>ids.has(e.commitmentId)&&e.quantity>0)){const predIds=new Set(s.weeks.flatMap(w=>w.commitments).filter(k=>k.taskId===t.id).map(k=>k.id));const done=sum(s.entries.filter(x=>predIds.has(x.commitmentId)&&x.date<e.date).map(x=>x.quantity));requireThat(scaled(done)>=scaled(t.total),'Correction would invalidate an existing successor handoff');}}
+  break;
+ }
+ case 'selectDay':{
+  const w=getWeek(s,c.week);
+  requireThat(w.status==='active','Daily review is available in an active week');
+  requireThat(c.date>=w.key&&c.date<=addDays(w.key,6),'Choose a day inside this week');
+  const cursor=dailyCursor(w);
+  requireThat(c.date<=addDays(cursor,1),'Advance one day at a time');
+  if(c.date>cursor)requireThat(dayComplete(s,w,cursor),'Save quantities and select reasons for every activity before the next day');
+  if(c.date>cursor)w.dailyDate=c.date;
   break;
  }
  case 'variance':{
