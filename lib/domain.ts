@@ -145,6 +145,11 @@ function phaseQuantityThrough(task:Task,date:string){
  const numerator=BigInt(scaled(task.total))*BigInt(days);
  return Number((2n*numerator+BigInt(duration))/(2n*BigInt(duration)));
 }
+export function activityDaysInWeek(task:Task,week:string){
+ const start=task.start>week?task.start:week;
+ const weekEnd=addDays(week,6),finish=task.finish<weekEnd?task.finish:weekEnd;
+ return {start,finish,days:Math.max(0,daysBetween(start,finish)+1)};
+}
 export function phaseWeekQuantity(task:Task,week:string){
  return (phaseQuantityThrough(task,addDays(week,6))-phaseQuantityThrough(task,addDays(week,-1)))/1000;
 }

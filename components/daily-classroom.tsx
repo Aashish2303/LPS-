@@ -1,11 +1,10 @@
 'use client';
 import {useState,type FormEvent} from 'react';
 import {ArrowLeft,ArrowRight,CheckCircle2,Save} from 'lucide-react';
-import {addDays,dailyCursor,dayComplete,findTask,commitmentActual,taskActual,fmt,pct,type State,type Week} from '@/lib/domain';
+import {addDays,activityDaysInWeek,dailyCursor,dayComplete,findTask,commitmentActual,taskActual,fmt,pct,type State,type Week} from '@/lib/domain';
 import {reasonCodes,otherReason} from '@/lib/reason-codes';
 
 type Props={state:State;week?:Week;canEdit:boolean;busy:boolean;send:(command:unknown)=>Promise<boolean>;openWeekly:()=>void;openCloseout:()=>void};
-const workingDays=7;
 const displayDate=new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',timeZone:'UTC'});
 const dateLabel=(date:string)=>displayDate.format(new Date(date+'T00:00:00Z'));
 export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openCloseout}:Props){
@@ -19,9 +18,9 @@ export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openClos
    <div className="panelhead"><div><h2>Day {Math.round((Date.parse(date)-Date.parse(week.key))/86400000)+1} · {dateLabel(date)}</h2><p>Record the quantity for this day only. Select a reason for each activity and save before advancing.</p></div><span className={'badge '+(complete?'teal':'amber')}>{complete?'Day saved':'Entries required'}</span></div>
    <div className="daytabs" aria-label="Exercise days">{Array.from({length:7},(_,i)=>{const key=addDays(week.key,i);return <button key={key} className={date===key?'active':''} disabled={busy||(active&&(key>addDays(cursor,1)||(key>cursor&&!dayComplete(state,week,cursor))))} aria-current={date===key?'date':undefined} onClick={()=>select(key)}>Day {i+1}<small>{dateLabel(key)}</small>{dayComplete(state,week,key)&&<CheckCircle2 size={14}/>}</button>;})}</div>
   </section>
-  {week.commitments.map(c=>{const task=findTask(state,c.taskId),entry=state.entries.find(e=>e.commitmentId===c.id&&e.date===date),actual=commitmentActual(state,c),all=taskActual(state,task.id);return <section className="dailycard" key={c.id}>
+  {week.commitments.map(c=>{const task=findTask(state,c.taskId),entry=state.entries.find(e=>e.commitmentId===c.id&&e.date===date),actual=commitmentActual(state,c),all=taskActual(state,task.id),planned=activityDaysInWeek(task,week.key),workingDays=planned.days||7;return <section className="dailycard" key={c.id}>
    <div className="dailyhead"><div><div className="eyebrow">{task.trade} / {task.area}</div><h3>{task.name}</h3><p>{c.owner} · Due {dateLabel(c.due)}</p></div><span className="badge">{entry?.reason?'Saved for this day':'Awaiting entry'}</span></div>
-   <div className="dailybody"><div className="dailyprogress"><span>Week actual</span><strong>{fmt(actual)} <small>/ {fmt(c.quantity)} {task.unit}</small></strong><div className="progress"><i style={{width:Math.min(100,pct(actual,c.quantity)??0)+'%'}}/></div><p>All-time scope: {fmt(all)} / {fmt(task.total)} {task.unit}</p><div className="dailytarget" aria-label={'Daily target for '+task.name}><span>Daily target</span><strong>{fmt(c.quantity/workingDays)} <small>{task.unit}/day</small></strong><small>{fmt(c.quantity)} {task.unit} ÷ {workingDays} working days · average per day</small></div></div>
+   <div className="dailybody"><div className="dailyprogress"><span>Week actual</span><strong>{fmt(actual)} <small>/ {fmt(c.quantity)} {task.unit}</small></strong><div className="progress"><i style={{width:Math.min(100,pct(actual,c.quantity)??0)+'%'}}/></div><p>All-time scope: {fmt(all)} / {fmt(task.total)} {task.unit}</p><div className="dailytarget" aria-label={'Daily target for '+task.name}><span>Daily target</span><strong>{fmt(c.quantity/workingDays)} <small>{task.unit}/day</small></strong><small>{fmt(c.quantity)} {task.unit} ÷ {workingDays} activity {workingDays===1?'day':'days'} in this week</small><small>{planned.days?'Planned '+dateLabel(planned.start)+' – '+dateLabel(planned.finish):'Carryover spread across this seven-day week'} · average per day</small></div></div>
     <DailyEntry key={c.id+date} commitmentId={c.id} date={date} unit={task.unit} activityName={task.name} saved={entry} disabled={!active||!canEdit||busy} send={send}/>
    </div>
   </section>;})}

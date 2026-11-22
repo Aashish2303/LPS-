@@ -100,3 +100,5 @@ Validation for this change: 35 domain/security tests and the optimized build pas
 - CPM is computed when viewing Phase Plan. Long activity lists defer offscreen rendering. Reused date/number formatters avoid repeated locale setup.
 - DM Sans and Manrope variable fonts are served by the deployment with font-display swap instead of a runtime Google Fonts stylesheet chain. Licenses are in app/fonts.
 - Run npm run bench:planning for a reproducible synthetic calculation comparison; this is a computation benchmark, not a promise about end-to-end network latency.
+
+- Daily check-in shows an average daily target: the fixed weekly commitment divided by the activity’s inclusive scheduled days within that project week. A partial week uses only its overlapping activity days. Overdue carryover uses the new seven-day week and is labelled accordingly. Targets do not change with actual quantities; displayed values round to three decimals.
