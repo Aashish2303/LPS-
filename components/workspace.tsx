@@ -223,26 +223,30 @@ function Lookahead({state,week,canEdit,addConstraint,openPhase,openWeekly}:{
  const weeks=Array.from({length:6},(_,i)=>{
   const key=addDays(week,i*7);
   const activities=weekAllocations(state,key).filter(a=>a.quantity>0)
-   .map(a=>({allocation:a,task:findTask(state,a.taskId)}))
+   .map(a=>{const task=findTask(state,a.taskId),issues=blockers(state,task,addDays(key,6)),left=remaining(state,task);return {allocation:a,task,issues,left,status:left===0?'Complete':issues.length?'Blocked':'Ready'};})
    .sort((a,b)=>a.task.start.localeCompare(b.task.start)||a.task.id.localeCompare(b.task.id));
   return {key,activities};
  }).filter(w=>w.activities.length>0);
- return <Panel className="lookaheadweeks" title="Six-week lookahead" detail="Planned activities, grouped by week. Weeks without planned work are hidden." action={<button onClick={openWeekly}>Weekly work plan <ArrowRight size={15}/></button>}>
+ return <Panel className="lookaheadweeks" title="Six-week lookahead" detail="Each week separates work needing constraint clearance from ready activities." action={<button onClick={openWeekly}>Weekly work plan <ArrowRight size={15}/></button>}>
   <details className="quantityexplanation"><summary>How are weekly quantities calculated?</summary><p>The activity’s total quantity is spread evenly across every calendar day from early start through early finish, including both dates. A week receives the days that overlap its seven-day period. For example, 100 units over 10 days gives 70 units in a full seven-day week. Rounding uses cumulative thousandths so the weekly splits add up exactly.</p><p>After closing a week, the next week’s quantity is the scheduled cumulative target by its end minus actual work recorded through the previous week. Any unfinished quantity is labelled carryover. Float and late dates are retained for schedule review; they do not change this distribution. Resolve constraints before promising the full forecast quantity.</p></details>
   {weeks.length?<div className="weekstack">{weeks.map(({key,activities})=><section className="forecastweek" key={key} aria-labelledby={'forecast-week-'+key}>
    <header className="forecastweekhead"><div><span className="eyebrow">{key===week?'CURRENT EXERCISE WEEK':'UPCOMING WEEK'}</span><h2 id={'forecast-week-'+key}>Week {weekNumber(state,key)} <span>{dateRange(key)}</span></h2></div><span className="weekactivitycount">{activities.length} {activities.length===1?'activity':'activities'}</span></header>
-   <div className="forecastcards">{activities.map(({task,allocation})=>{
-    const issues=blockers(state,task,addDays(key,6)),left=remaining(state,task);
-    const status=left===0?'Complete':issues.length?'Blocked':'Ready';
-    return <article className={'forecastcard '+status.toLowerCase()} key={task.id} aria-label={task.name+' · Week '+weekNumber(state,key)}>
-     <div className="forecastcardhead"><Badge tone="violet">Phase Schedule</Badge><Badge tone={status==='Ready'?'teal':status==='Blocked'?'amber':'neutral'}>{status==='Ready'?<><CheckCircle2 size={14}/> Ready</>:status}</Badge></div>
-     <h3>{task.name}</h3><p className="forecastclassification">{task.trade} · {task.area}</p>
-     <dl className="forecastfacts"><div><dt>Planned quantity</dt><dd className="forecastquantity">{fmt(allocation.quantity)} <span>{task.unit}</span></dd></div><div><dt>Remaining scope</dt><dd>{fmt(left)} <span>{task.unit}</span></dd></div><div><dt>Target finish</dt><dd>{df(forecastDue(task,key))}</dd></div>{task.schedule?.float!==undefined&&<div><dt>Schedule float</dt><dd>{fmt(task.schedule.float)} <span>days</span></dd></div>}</dl>
-     {!!allocation.carry&&<p className="forecastcarry">Includes {fmt(allocation.carry)} {task.unit} carryover</p>}
-     <div className="forecastconstraints"><h4>Constraints & handoffs</h4>{issues.length?<ul>{issues.map((issue,i)=><li key={i}>{issue}</li>)}</ul>:<p>Clear for this week.</p>}<button className="textbutton forecastadd" disabled={!canEdit||state.weeks.some(w=>w.key===key&&w.status==='closed')} aria-label={'Constraint for '+task.name+' week '+weekNumber(state,key)} onClick={()=>addConstraint(task,key)}><Plus size={15}/>Add constraint</button></div>
-     <footer className="forecastowner"><Users size={14}/><span>{task.owner}</span></footer>
-    </article>;
-   })}</div>
+   <div className={'readinesscolumns '+(activities.every(a=>a.status!=='Blocked')?'all-ready':activities.every(a=>a.status==='Blocked')?'all-blocked':'')}>
+    {(['Blocked','Ready'] as const).map(lane=>{
+     const items=activities.filter(a=>lane==='Blocked'?a.status==='Blocked':a.status!=='Blocked');
+     const label=lane==='Blocked'?'Needs clearing':items.some(a=>a.status==='Complete')?'Ready / complete':'Ready activities';
+     return <section className={'readinesslane '+(lane==='Blocked'?'blockedlane':'readylane')} key={lane} aria-label={label+' · Week '+weekNumber(state,key)}>
+      <header className="readinesslanehead"><h3>{lane==='Blocked'?<ShieldCheck size={17}/>:<CheckCircle2 size={17}/>} {label}</h3><span>{items.length}</span></header>
+      {items.length?<div className="forecastcards">{items.map(({task,allocation,issues,left,status})=><article className={'forecastcard '+status.toLowerCase()} key={task.id} aria-label={task.name+' · Week '+weekNumber(state,key)}>
+       <div className="forecastcardhead"><div><h3>{task.name}</h3><p className="forecastclassification">{task.trade} · {task.area}</p></div><Badge tone={status==='Ready'?'teal':status==='Blocked'?'amber':'neutral'}>{status}</Badge></div>
+       <dl className="forecastfacts"><div><dt>Planned quantity</dt><dd className="forecastquantity">{fmt(allocation.quantity)} <span>{task.unit}</span></dd></div><div><dt>Remaining scope</dt><dd>{fmt(left)} <span>{task.unit}</span></dd></div><div><dt>Target finish</dt><dd>{df(forecastDue(task,key))}</dd></div>{task.schedule?.float!==undefined&&<div><dt>Schedule float</dt><dd>{fmt(task.schedule.float)} <span>days</span></dd></div>}</dl>
+       {!!allocation.carry&&<p className="forecastcarry">Includes {fmt(allocation.carry)} {task.unit} carryover</p>}
+       {!!issues.length&&<div className="forecastconstraints"><ul aria-label="Open constraints and handoffs">{issues.map((issue,i)=><li key={i}>{issue}</li>)}</ul></div>}
+       <footer className="forecastcardfoot"><span className="forecastowner"><Users size={13}/><span>{task.owner}</span></span><button className="textbutton forecastadd" disabled={!canEdit||state.weeks.some(w=>w.key===key&&w.status==='closed')} aria-label={'Constraint for '+task.name+' week '+weekNumber(state,key)} onClick={()=>addConstraint(task,key)}><Plus size={14}/>Add constraint</button></footer>
+      </article>)}</div>:<p className="laneempty">{lane==='Blocked'?'No blocked activities.':'No ready activities yet.'}</p>}
+     </section>;
+    })}
+   </div>
   </section>)}</div>:<Empty title={state.tasks.length?'No work scheduled in these six weeks':'Import a phase schedule to get started'} detail={state.tasks.length?'The window advances automatically after you close the current week.':'Planned activities and constraints will appear here after import.'} action={<button onClick={openPhase}>Open Phase Plan <ArrowRight size={15}/></button>}/>}
  </Panel>;
 }
