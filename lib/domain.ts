@@ -150,6 +150,23 @@ export function activityDaysInWeek(task:Task,week:string){
  const weekEnd=addDays(week,6),finish=task.finish<weekEnd?task.finish:weekEnd;
  return {start,finish,days:Math.max(0,daysBetween(start,finish)+1)};
 }
+// Split the fixed weekly promise over its planned work dates using cumulative
+// thousandths, so rounding never creates or loses weekly scope.
+export function dailyCommitmentPlan(task:Task,week:string,commitment:Pick<Commitment,'quantity'|'due'>){
+ const carryover=task.finish<week;
+ const scheduled=activityDaysInWeek(task,week);
+ const start=carryover?week:scheduled.start;
+ const targetFinish=carryover?addDays(week,6):scheduled.finish;
+ const finish=commitment.due<targetFinish?commitment.due:targetFinish;
+ const workingDays=Math.max(0,daysBetween(start,finish)+1);
+ const units=BigInt(scaled(commitment.quantity));
+ const through=(n:number)=>workingDays?Number((2n*units*BigInt(n)+BigInt(workingDays))/(2n*BigInt(workingDays))):0;
+ const days=Array.from({length:7},(_,i)=>{
+  const date=addDays(week,i),n=daysBetween(start,date)+1;
+  return {date,quantity:date<start||date>finish?0:(through(n)-through(n-1))/1000};
+ });
+ return {start,finish,workingDays,carryover,average:workingDays?commitment.quantity/workingDays:0,days};
+}
 export function phaseWeekQuantity(task:Task,week:string){
  return (phaseQuantityThrough(task,addDays(week,6))-phaseQuantityThrough(task,addDays(week,-1)))/1000;
 }
