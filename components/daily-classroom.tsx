@@ -5,6 +5,7 @@ import {addDays,dailyCursor,dayComplete,findTask,commitmentActual,taskActual,fmt
 import {reasonCodes,otherReason} from '@/lib/reason-codes';
 
 type Props={state:State;week?:Week;canEdit:boolean;busy:boolean;send:(command:unknown)=>Promise<boolean>;openWeekly:()=>void;openCloseout:()=>void};
+const workingDays=7;
 const displayDate=new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',timeZone:'UTC'});
 const dateLabel=(date:string)=>displayDate.format(new Date(date+'T00:00:00Z'));
 export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openCloseout}:Props){
@@ -20,7 +21,7 @@ export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openClos
   </section>
   {week.commitments.map(c=>{const task=findTask(state,c.taskId),entry=state.entries.find(e=>e.commitmentId===c.id&&e.date===date),actual=commitmentActual(state,c),all=taskActual(state,task.id);return <section className="dailycard" key={c.id}>
    <div className="dailyhead"><div><div className="eyebrow">{task.trade} / {task.area}</div><h3>{task.name}</h3><p>{c.owner} · Due {dateLabel(c.due)}</p></div><span className="badge">{entry?.reason?'Saved for this day':'Awaiting entry'}</span></div>
-   <div className="dailybody"><div className="dailyprogress"><span>Week actual</span><strong>{fmt(actual)} <small>/ {fmt(c.quantity)} {task.unit}</small></strong><div className="progress"><i style={{width:Math.min(100,pct(actual,c.quantity)??0)+'%'}}/></div><p>All-time scope: {fmt(all)} / {fmt(task.total)} {task.unit}</p></div>
+   <div className="dailybody"><div className="dailyprogress"><span>Week actual</span><strong>{fmt(actual)} <small>/ {fmt(c.quantity)} {task.unit}</small></strong><div className="progress"><i style={{width:Math.min(100,pct(actual,c.quantity)??0)+'%'}}/></div><p>All-time scope: {fmt(all)} / {fmt(task.total)} {task.unit}</p><div className="dailytarget" aria-label={'Daily target for '+task.name}><span>Daily target</span><strong>{fmt(c.quantity/workingDays)} <small>{task.unit}/day</small></strong><small>{fmt(c.quantity)} {task.unit} ÷ {workingDays} working days · average per day</small></div></div>
     <DailyEntry key={c.id+date} commitmentId={c.id} date={date} unit={task.unit} activityName={task.name} saved={entry} disabled={!active||!canEdit||busy} send={send}/>
    </div>
   </section>;})}

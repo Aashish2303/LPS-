@@ -72,3 +72,5 @@ input,select,textarea,.search input,.projectswitch select,.weekcontrol input,.da
 @media(max-width:800px){.readinesscolumns,.readinesscolumns.all-ready,.readinesscolumns.all-blocked{grid-template-columns:minmax(0,1fr);gap:12px}.readinesslane{padding:12px}.readinesslane .forecastcard{padding:15px}.readinesslane .forecastcardhead>.badge{font-size:.75rem}}
 /* Render long exercise lists as they enter the viewport. Navigation stays immediate. */
 html{scroll-behavior:auto}.forecastcard{content-visibility:auto;contain-intrinsic-size:auto 245px}.dailycard,.variancecard{content-visibility:auto;contain-intrinsic-size:auto 370px}
+
+.dailyprogress .dailytarget{margin-top:16px;padding:13px 15px;border:1px solid #ffce2433;border-radius:7px;background:var(--accent-soft)}.dailyprogress .dailytarget>span{display:block;color:var(--muted);font-size:.85rem;line-height:1.5}.dailycard .dailyprogress .dailytarget strong{margin:5px 0;font-size:1.4rem;line-height:1.5}.dailyprogress .dailytarget>small{display:block;color:var(--subtle);font-size:.78rem;line-height:1.65;overflow-wrap:anywhere}
