@@ -21,3 +21,11 @@ export function safeReturnPath(value:string|null){
  try{const url=new URL(value,'https://lps.invalid');const route=parseRoute(url.pathname);if(url.origin!=='https://lps.invalid'||!route||route.kind!=='project')return '/';const week=url.searchParams.get('week');return url.pathname+(validWeek(week)?'?week='+week:'');}catch{return '/';}
 }
 export function validWeek(value:string|null):value is string{if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const d=new Date(value+'T00:00:00Z');return Number.isFinite(+d)&&d.toISOString().slice(0,10)===value;}
+
+// Only a view change in the already-loaded workspace may bypass a server trip.
+// Deep links and switching projects continue through the normal router and API guards.
+export function sameWorkspaceRoute(from:string,to:string,loadedProjectId:string){
+ const source=parseRoute(from),target=parseRoute(to);
+ if(source?.kind==='demo'&&target?.kind==='demo')return true;
+ return source?.kind==='project'&&target?.kind==='project'&&source.projectId===loadedProjectId&&target.projectId===loadedProjectId;
+}

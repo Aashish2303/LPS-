@@ -91,3 +91,12 @@ Validation for this change: 35 domain/security tests and the optimized build pas
 - Start and closeout allow simulated future weeks. An empty or fully blocked week can be closed, with PPC displayed as unavailable rather than a fabricated zero.
 - IIT Madras and ILCE images are served locally from the institutions’ public logo assets. Their presence does not assert endorsement.
 - Existing closed weeks and their records are kept immutable. Older projects with recorded weeks keep those boundaries; new projects and imports without recorded history use the project start.
+
+## Performance update · 22 November 2026
+
+- Section changes within an already loaded project use the Next.js-integrated History API. URL deep links, browser back/forward and the selected review week continue working. Switching projects and entering authentication routes use the normal router. Every data read and write retains its server authorization and validation.
+- Public landing and demo pages render without waiting for the authentication provider. The auth client is loaded on demand; authenticated project access still waits for session restoration.
+- Immutable UI snapshots opt into an indexed ledger for exact date-filtered totals, predecessor traversal and forecast/readiness memoization. Command execution clones the snapshot and always uses an uncached mutable ledger, avoiding stale validation results. Cache keys are weak object references, isolated to each project snapshot.
+- CPM is computed when viewing Phase Plan. Long activity lists defer offscreen rendering. Reused date/number formatters avoid repeated locale setup.
+- DM Sans and Manrope variable fonts are served by the deployment with font-display swap instead of a runtime Google Fonts stylesheet chain. Licenses are in app/fonts.
+- Run npm run bench:planning for a reproducible synthetic calculation comparison; this is a computation benchmark, not a promise about end-to-end network latency.

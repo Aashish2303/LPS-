@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {planningIndex} from './planning-index';
 import { otherReason, reasonCode } from './reason-codes';
 
 export type Milestone={id:string;name:string;date:string;owner:string};
@@ -51,7 +52,8 @@ export const commandSchema=z.discriminatedUnion('type',[
  z.strictObject({type:z.literal('close'),week:dateSchema,reasons:z.array(z.strictObject(varianceFields)).max(1000).optional()})
 ]);
 export type Command=z.infer<typeof commandSchema>;
-export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const indiaDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'});
+export const today=()=>indiaDate.format(new Date());
 export const addDays=(d:string,n:number)=>new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 export function monday(d:string){dateSchema.parse(d);const dow=new Date(d+'T00:00:00Z').getUTCDay();return addDays(d,-((dow+6)%7));}
 export function calendarAnchor(s:State){
@@ -97,18 +99,27 @@ export function dayComplete(s:State,w:Week,date:string){
 export function dailyCursor(w:Week){return w.dailyDate??w.key;}
 const scaled=(n:number)=>Math.round(n*1000);
 export const sum=(xs:number[])=>xs.reduce((s,n)=>s+scaled(n),0)/1000;
-export const fmt=(n:number)=>n.toLocaleString('en-IN',{maximumFractionDigits:3});
+const quantityFormat=new Intl.NumberFormat('en-IN',{maximumFractionDigits:3});
+export const fmt=(n:number)=>quantityFormat.format(n);
 export const pct=(a:number,b:number)=>b>0?Math.round(a/b*1000)/10:null;
 export function emptyState(name='Untitled project',date=today()):State{return {schema:1,name,code:'LC-001',client:'',location:'',start:date,finish:addDays(date,180),trades:['Civil','Structure','MEP','Finishes'],areas:['Zone A','Zone B'],milestones:[],tasks:[],constraints:[],allocations:[],weeks:[],entries:[]};}
 function requireThat(ok:unknown,msg:string):asserts ok{if(!ok)throw new DomainError(msg);}
-export function findTask(s:State,id:string){const t=s.tasks.find(t=>t.id===id);requireThat(t,'Activity not found');return t;}
-export function commitmentActual(s:State,c:Commitment,through='9999-12-31'){return sum(s.entries.filter(e=>e.commitmentId===c.id&&e.date<=through).map(e=>e.quantity));}
-export function taskActual(s:State,taskId:string,through='9999-12-31'){const ids=new Set(s.weeks.flatMap(w=>w.commitments).filter(c=>c.taskId===taskId).map(c=>c.id));return sum(s.entries.filter(e=>ids.has(e.commitmentId)&&e.date<=through).map(e=>e.quantity));}
+export function findTask(s:State,id:string){const index=planningIndex(s),t=index?index.tasks.get(id):s.tasks.find(t=>t.id===id);requireThat(t,'Activity not found');return t;}
+export function commitmentActual(s:State,c:Commitment,through='9999-12-31'){const index=planningIndex(s);return index?index.commitmentActual(c.id,through):sum(s.entries.filter(e=>e.commitmentId===c.id&&e.date<=through).map(e=>e.quantity));}
+export function taskActual(s:State,taskId:string,through='9999-12-31'){const index=planningIndex(s);if(index)return index.taskActual(taskId,through);const ids=new Set(s.weeks.flatMap(w=>w.commitments).filter(c=>c.taskId===taskId).map(c=>c.id));return sum(s.entries.filter(e=>ids.has(e.commitmentId)&&e.date<=through).map(e=>e.quantity));}
 export function remaining(s:State,t:Task){return (scaled(t.total)-scaled(taskActual(s,t.id)))/1000;}
 export function blockers(s:State,t:Task,date?:string){
- const taskById=new Map(s.tasks.map(task=>[task.id,task]));
+ const index=planningIndex(s),cached=index?.issues.get(t.id);
+ if(cached?.has(date))return cached.get(date)!;
+ const result=calculateBlockers(s,t,date);
+ if(index){let values=cached;if(!values){values=new Map();index.issues.set(t.id,values);}values.set(date,result);}
+ return result;
+}
+function calculateBlockers(s:State,t:Task,date?:string){
+ const index=planningIndex(s),taskById=index?.tasks??new Map(s.tasks.map(task=>[task.id,task]));
  const ancestors=new Map<string,Task>();
- const pending=[...t.predecessors];
+ const pending=index?[]:[...t.predecessors];
+ if(index)for(const predecessor of index.ancestorTasks(t))ancestors.set(predecessor.id,predecessor);
  while(pending.length){
   const task=taskById.get(pending.pop()!);
   if(!task||ancestors.has(task.id))continue;
@@ -140,6 +151,10 @@ export function phaseWeekQuantity(task:Task,week:string){
  return (phaseQuantityThrough(task,addDays(week,6))-phaseQuantityThrough(task,addDays(week,-1)))/1000;
 }
 export function weekAllocations(s:State,week:string):Allocation[]{
+ const index=planningIndex(s),cached=index?.forecasts.get(week);if(cached)return cached;
+ const result=calculateWeekAllocations(s,week);index?.forecasts.set(week,result);return result;
+}
+function calculateWeekAllocations(s:State,week:string):Allocation[]{
  const record=s.weeks.find(w=>w.key===week);
  if(record?.plan)return record.plan;
  const overrides=s.allocations.filter(a=>a.week===week);

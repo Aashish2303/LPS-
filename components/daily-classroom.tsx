@@ -5,7 +5,8 @@ import {addDays,dailyCursor,dayComplete,findTask,commitmentActual,taskActual,fmt
 import {reasonCodes,otherReason} from '@/lib/reason-codes';
 
 type Props={state:State;week?:Week;canEdit:boolean;busy:boolean;send:(command:unknown)=>Promise<boolean>;openWeekly:()=>void;openCloseout:()=>void};
-const dateLabel=(date:string)=>new Date(date+'T00:00:00Z').toLocaleDateString('en-IN',{day:'numeric',month:'short',timeZone:'UTC'});
+const displayDate=new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',timeZone:'UTC'});
+const dateLabel=(date:string)=>displayDate.format(new Date(date+'T00:00:00Z'));
 export function DailyClassroom({state,week,canEdit,busy,send,openWeekly,openCloseout}:Props){
  const [date,setDate]=useState(week?dailyCursor(week):state.start);
  if(!week||week.status==='draft')return <div className="empty"><h3>Start your weekly plan first</h3><p>Freeze the promises before recording daily quantities.</p><button onClick={openWeekly}>Open weekly work plan</button></div>;

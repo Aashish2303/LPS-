@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "check": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "bench:planning": "node --import tsx scripts/benchmark-planning.ts"
   },
   "dependencies": {
     "@neondatabase/auth": "0.6.0-beta",
