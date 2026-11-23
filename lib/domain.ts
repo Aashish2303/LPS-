@@ -8,7 +8,7 @@ export type Task={id:string;name:string;trade:string;area:string;owner:string;un
 export type Constraint={id:string;taskId:string;category:string;description:string;owner:string;due:string;week?:string;resolvedOn:string|null;resolution:string};
 export type Allocation={id:string;taskId:string;week:string;quantity:number;createdOn:string;carry?:number};
 export type Commitment={id:string;taskId:string;quantity:number;due:string;owner:string;reason:string;reasonNote?:string;learning:string;anticipated:boolean};
-export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[];dailyDate?:string;dailyReasonsRequired?:boolean;noWorkReason?:string;ppcRule?:'weekly';performance?:WeekPerformance};
+export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[];dailyDate?:string;dailyReasonsRequired?:boolean;noWorkReason?:string;ppcRule?:'weekly';performance?:WeekPerformance;weeklyPpcCorrection?:{from:number|null;to:number|null}};
 export type Entry={commitmentId:string;date:string;quantity:number;note:string;reason?:string};
 export type DailyActivityResult={
  commitmentId:string;taskId:string;planned:number;actual:number|null;
@@ -94,6 +94,23 @@ export function classroomState(input:State):State{
  const s=structuredClone(input);
  if(!s.classroom){s.calendarStart=s.weeks.map(w=>w.key).sort()[0]??s.start;s.classroom=true;}
  for(const w of s.weeks)if(w.status==='active'){w.dailyReasonsRequired=true;w.dailyDate??=w.key;}
+ // The teaching rule applies to existing locked weeks too. Correct derived
+ // weekly scores, retaining the original ledger, daily results and reasons.
+ const closed=s.weeks.filter(w=>w.status==='closed');
+ if(closed.length){
+  const ledger=new PlanningIndex(s);
+  for(const w of closed){
+   const weekly=weeklyScore(s,w,ledger);
+   const previous=w.performance?w.performance.weekly.ppc:(w.ppcRule==='weekly'?weekly.ppc:pct(w.commitments.filter(c=>scaled(ledger.commitmentActual(c.id,c.due))>=scaled(c.quantity)).length,w.commitments.length));
+   if(previous!==weekly.ppc&&!w.weeklyPpcCorrection)w.weeklyPpcCorrection={from:previous,to:weekly.ppc};
+   w.ppcRule='weekly';
+   if(w.performance)w.performance.weekly=weekly;
+   else{
+    const daily=dailyPpcSeries(s,w,ledger),shortfalls=dailyShortfalls(s,w,daily);
+    w.performance={version:1,weekly,daily,shortfalls};
+   }
+  }
+ }
  return s;
 }
 function checkWeek(s:State,key:string){
@@ -196,9 +213,9 @@ export function dailyReasonRequired(s:State,w:Week,c:Commitment,date:string,quan
 }
 // Read the frozen weekly promises and saved ledger, never the wall clock or
 // unsaved input values. Earlier completion removes only later daily targets.
-export function dailyPpcSeries(s:State,w:Week):DailyPpc[]{
+export function dailyPpcSeries(s:State,w:Week,preparedLedger?:PlanningIndex):DailyPpc[]{
  if(w.status==='closed'&&w.performance?.version===1)return w.performance.daily;
- const ledger=planningIndex(s)??new PlanningIndex(s);
+ const ledger=preparedLedger??planningIndex(s)??new PlanningIndex(s);
  const plans=w.commitments.map(c=>({c,task:findTask(s,c.taskId),plan:dailyCommitmentPlan(findTask(s,c.taskId),w.key,c)}));
  const entries=new Map(s.entries.map(e=>[e.commitmentId+'\0'+e.date,e]));
  return Array.from({length:7},(_,i)=>{
@@ -239,11 +256,11 @@ export function dailyShortfalls(s:State,w:Week,days=dailyPpcSeries(s,w)):DailySh
    reason:code&&(code!==otherReason||entry?.note.trim())?code:null,note:entry?.note??''};
  }));
 }
-export function weeklyPpcRule(w:Week){return w.ppcRule==='weekly'||w.status!=='closed';}
+export function weeklyPpcRule(_w:Week){return true;}
 export function commitmentOutcome(s:State,w:Week,c:Commitment){
  const byDue=commitmentActual(s,c,c.due),byWeek=commitmentActual(s,c,addDays(w.key,6));
  const completed=scaled(byWeek)>=scaled(c.quantity),onTime=scaled(byDue)>=scaled(c.quantity);
- return {byDue,byWeek,completed,onTime,late:completed&&!onTime,ppcMet:weeklyPpcRule(w)?completed:onTime,requiresReason:!onTime};
+ return {byDue,byWeek,completed,onTime,late:completed&&!onTime,ppcMet:completed,requiresReason:!onTime};
 }
 export function phaseWeekQuantity(task:Task,week:string){
  return (phaseQuantityThrough(task,addDays(week,6))-phaseQuantityThrough(task,addDays(week,-1)))/1000;
@@ -281,7 +298,11 @@ export function forecastDue(task:Task,week:string){
  return task.finish<week?sunday:task.finish<sunday?task.finish:sunday;
 }
 function getWeek(s:State,key:string,create=false){checkWeek(s,key);let w=s.weeks.find(w=>w.key===key);if(!w&&create){w={key,status:'draft',commitments:[],frozenOn:null,closedOn:null,readyAtFreeze:0,plannedAtFreeze:0};s.weeks.push(w);}requireThat(w,'Create commitments before starting this week');return w;}
-export function metrics(s:State,w:Week){const saved=w.status==='closed'&&w.performance?.version===1?w.performance.weekly:undefined,total=saved?.total??w.commitments.length,done=saved?.done??w.commitments.filter(c=>commitmentOutcome(s,w,c).ppcMet).length;return {total,done,ppc:saved?saved.ppc:pct(done,total),ta:pct(w.commitments.filter(c=>c.anticipated).length,w.commitments.length),tmr:w.frozenOn?pct(w.readyAtFreeze,w.plannedAtFreeze):null};}
+function weeklyScore(s:State,w:Week,ledger=planningIndex(s)??new PlanningIndex(s)){
+ const total=w.commitments.length,end=addDays(w.key,6),done=w.commitments.filter(c=>scaled(ledger.commitmentActual(c.id,end))>=scaled(c.quantity)).length;
+ return {total,done,ppc:pct(done,total)};
+}
+export function metrics(s:State,w:Week){return {...weeklyScore(s,w),ta:pct(w.commitments.filter(c=>c.anticipated).length,w.commitments.length),tmr:w.frozenOn?pct(w.readyAtFreeze,w.plannedAtFreeze):null};}
 function reserved(s:State,taskId:string,except?:string){return sum(s.weeks.filter(w=>w.status!=='closed').flatMap(w=>w.commitments).filter(c=>c.taskId===taskId&&c.id!==except).map(c=>Math.max(0,(scaled(c.quantity)-scaled(commitmentActual(s,c)))/1000)))}
 export function available(s:State,t:Task){return (scaled(remaining(s,t))-scaled(reserved(s,t.id)))/1000;}
 // Use the same eligibility rules for the planning controls and deliberate no-work weeks.

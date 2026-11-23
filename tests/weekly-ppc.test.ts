@@ -52,9 +52,9 @@ test('a fractional weekly shortfall is PPC zero and a later week cannot repair t
  s=run(s,{type:'commit',id:'c2',taskId:'A',week:next,quantity,due:addDays(next,6),owner:'Lead'});s=run(s,{type:'freeze',week:next});s=run(s,{type:'actual',commitmentId:'c2',date:next,quantity:.001,note:''});
  assert.equal(taskActual(s,'A'),18);assert.equal(metrics(s,s.weeks[0]).ppc,0);assert.equal(metrics(s,s.weeks[1]).ppc,100);assert.deepEqual(s.weeks[0],first);
 });
-test('legacy locked weeks keep the due-date rule while active and newly closed weeks use weekly PPC',()=>{
+test('legacy locked weeks use weekly quantity just like active and newly closed weeks',()=>{
  const s=late();const legacy=structuredClone(s);legacy.weeks[0].status='closed';delete legacy.weeks[0].ppcRule;
- assert.equal(weeklyPpcRule(legacy.weeks[0]),false);assert.equal(metrics(legacy,legacy.weeks[0]).ppc,0);assert.equal(metrics(s,s.weeks[0]).ppc,100);
+ assert.equal(weeklyPpcRule(legacy.weeks[0]),true);assert.equal(metrics(legacy,legacy.weeks[0]).ppc,100);assert.equal(metrics(s,s.weeks[0]).ppc,100);
  assert.equal(commitmentOutcome(legacy,legacy.weeks[0],legacy.weeks[0].commitments[0]).late,true);
 });
 test('indexed immutable snapshots agree on early completion waivers and weekly versus promised-day results',()=>{

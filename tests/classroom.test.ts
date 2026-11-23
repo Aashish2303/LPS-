@@ -76,7 +76,7 @@ test('a fully blocked or empty teaching week can start and close without fabrica
 
 test('legacy upgrade preserves closed calendars and makes active day reasoning mandatory',()=>{
  const s=emptyState('Old','2026-10-01');s.weeks=[{key:'2026-10-05',status:'closed',commitments:[],frozenOn:'2026-10-05',closedOn:'2026-10-06',readyAtFreeze:0,plannedAtFreeze:0},{key:'2026-10-12',status:'active',commitments:[],frozenOn:'2026-10-12',closedOn:null,readyAtFreeze:0,plannedAtFreeze:0}];
- const upgraded=classroomState(s);assert.equal(upgraded.calendarStart,'2026-10-05');assert.equal(upgraded.weeks[1].dailyReasonsRequired,true);assert.deepEqual(upgraded.weeks[0],s.weeks[0]);assert.equal(s.classroom,undefined);
+ const upgraded=classroomState(s);assert.equal(upgraded.calendarStart,'2026-10-05');assert.equal(upgraded.weeks[1].dailyReasonsRequired,true);assert.equal(upgraded.weeks[0].ppcRule,'weekly');assert.equal(upgraded.weeks[0].performance!.weekly.ppc,null);assert.equal(upgraded.weeks[0].closedOn,s.weeks[0].closedOn);assert.equal(s.classroom,undefined);
 });
 
 
