@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import {planningIndex} from './planning-index';
+import {PlanningIndex,planningIndex} from './planning-index';
 import { otherReason, reasonCode } from './reason-codes';
 
 export type Milestone={id:string;name:string;date:string;owner:string};
@@ -8,8 +8,18 @@ export type Task={id:string;name:string;trade:string;area:string;owner:string;un
 export type Constraint={id:string;taskId:string;category:string;description:string;owner:string;due:string;week?:string;resolvedOn:string|null;resolution:string};
 export type Allocation={id:string;taskId:string;week:string;quantity:number;createdOn:string;carry?:number};
 export type Commitment={id:string;taskId:string;quantity:number;due:string;owner:string;reason:string;reasonNote?:string;learning:string;anticipated:boolean};
-export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[];dailyDate?:string;dailyReasonsRequired?:boolean;noWorkReason?:string;ppcRule?:'weekly'};
+export type Week={key:string;status:'draft'|'active'|'closed';commitments:Commitment[];frozenOn:string|null;closedOn:string|null;readyAtFreeze:number;plannedAtFreeze:number;plan?:Allocation[];dailyDate?:string;dailyReasonsRequired?:boolean;noWorkReason?:string;ppcRule?:'weekly';performance?:WeekPerformance};
 export type Entry={commitmentId:string;date:string;quantity:number;note:string;reason?:string};
+export type DailyActivityResult={
+ commitmentId:string;taskId:string;planned:number;actual:number|null;
+ status:'achieved'|'missed'|'pending'|'completed-earlier'|'not-planned';
+};
+export type DailyPpc={
+ date:string;scheduled:number;excluded:number;total:number;done:number;missed:number;pending:number;
+ ppc:number|null;status:'not-started'|'no-work'|'pending'|'complete';activities:DailyActivityResult[];
+};
+export type DailyShortfall={date:string;commitmentId:string;taskId:string;planned:number;actual:number|null;reason:string|null;note:string};
+export type WeekPerformance={version:1;weekly:{total:number;done:number;ppc:number|null};daily:DailyPpc[];shortfalls:DailyShortfall[]};
 export type State={schema:1;calendarStart?:string;classroom?:boolean;name:string;code:string;client:string;location:string;start:string;finish:string;trades:string[];areas:string[];milestones:Milestone[];tasks:Task[];constraints:Constraint[];allocations:Allocation[];weeks:Week[];entries:Entry[]};
 export class DomainError extends Error { constructor(message:string,public status=422){super(message);} }
 export const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>{const d=new Date(v+'T00:00:00Z');return !isNaN(+d)&&d.toISOString().slice(0,10)===v;},'Enter a valid calendar date');
@@ -184,6 +194,51 @@ export function dailyReasonRequired(s:State,w:Week,c:Commitment,date:string,quan
  const planned=dailyCommitmentPlan(task,w.key,c).days.find(d=>d.date===date)?.quantity??0;
  return units<scaled(planned);
 }
+// Read the frozen weekly promises and saved ledger, never the wall clock or
+// unsaved input values. Earlier completion removes only later daily targets.
+export function dailyPpcSeries(s:State,w:Week):DailyPpc[]{
+ if(w.status==='closed'&&w.performance?.version===1)return w.performance.daily;
+ const ledger=planningIndex(s)??new PlanningIndex(s);
+ const plans=w.commitments.map(c=>({c,task:findTask(s,c.taskId),plan:dailyCommitmentPlan(findTask(s,c.taskId),w.key,c)}));
+ const entries=new Map(s.entries.map(e=>[e.commitmentId+'\0'+e.date,e]));
+ return Array.from({length:7},(_,i)=>{
+  const date=addDays(w.key,i),previous=addDays(date,-1);
+  const activities:DailyActivityResult[]=plans.map(({c,task,plan})=>{
+   const planned=plan.days[i].quantity,entry=entries.get(c.id+'\0'+date),actual=entry?.quantity??null;
+   let status:DailyActivityResult['status'];
+   if(scaled(planned)===0)status='not-planned';
+   else{
+    const before=scaled(ledger.commitmentActual(c.id,previous)),scopeBefore=scaled(ledger.taskActual(task.id,previous));
+    if(before>=scaled(c.quantity)||scopeBefore>=scaled(task.total))status='completed-earlier';
+    else if(!entry||w.status==='draft')status=w.status==='closed'?'missed':'pending';
+    else status=scaled(entry.quantity)>=scaled(planned)||before+scaled(entry.quantity)>=scaled(c.quantity)||scopeBefore+scaled(entry.quantity)>=scaled(task.total)?'achieved':'missed';
+   }
+   return {commitmentId:c.id,taskId:c.taskId,planned,actual,status};
+  });
+  const count=(status:DailyActivityResult['status'])=>activities.filter(a=>a.status===status).length;
+  const excluded=count('completed-earlier'),done=count('achieved'),missed=count('missed'),pending=count('pending');
+  const total=done+missed+pending,scheduled=total+excluded;
+  return {date,scheduled,excluded,total,done,missed,pending,
+   ppc:w.status==='draft'||pending?null:pct(done,total),
+   status:w.status==='draft'?'not-started':!total?'no-work':pending?'pending':'complete',activities};
+ });
+}
+export function dailyPpc(s:State,w:Week,date:string):DailyPpc{
+ dateSchema.parse(date);
+ if(date<w.key||date>addDays(w.key,6))throw new DomainError('Choose a day within the selected week');
+ return dailyPpcSeries(s,w).find(day=>day.date===date)!;
+}
+// Daily reason events are independent of weekly primary reasons. A later
+// catch-up cannot erase a reason recorded for an earlier activity/day shortfall.
+export function dailyShortfalls(s:State,w:Week,days=dailyPpcSeries(s,w)):DailyShortfall[]{
+ if(w.status==='closed'&&w.performance?.version===1)return w.performance.shortfalls;
+ const entries=new Map(s.entries.map(e=>[e.commitmentId+'\0'+e.date,e]));
+ return days.flatMap(day=>day.activities.filter(a=>a.status==='missed').map(a=>{
+  const entry=entries.get(a.commitmentId+'\0'+day.date),code=reasonCode(entry?.reason??'');
+  return {date:day.date,commitmentId:a.commitmentId,taskId:a.taskId,planned:a.planned,actual:a.actual,
+   reason:code&&(code!==otherReason||entry?.note.trim())?code:null,note:entry?.note??''};
+ }));
+}
 export function weeklyPpcRule(w:Week){return w.ppcRule==='weekly'||w.status!=='closed';}
 export function commitmentOutcome(s:State,w:Week,c:Commitment){
  const byDue=commitmentActual(s,c,c.due),byWeek=commitmentActual(s,c,addDays(w.key,6));
@@ -226,7 +281,7 @@ export function forecastDue(task:Task,week:string){
  return task.finish<week?sunday:task.finish<sunday?task.finish:sunday;
 }
 function getWeek(s:State,key:string,create=false){checkWeek(s,key);let w=s.weeks.find(w=>w.key===key);if(!w&&create){w={key,status:'draft',commitments:[],frozenOn:null,closedOn:null,readyAtFreeze:0,plannedAtFreeze:0};s.weeks.push(w);}requireThat(w,'Create commitments before starting this week');return w;}
-export function metrics(s:State,w:Week){const done=w.commitments.filter(c=>commitmentOutcome(s,w,c).ppcMet).length;return {total:w.commitments.length,done,ppc:pct(done,w.commitments.length),ta:pct(w.commitments.filter(c=>c.anticipated).length,w.commitments.length),tmr:w.frozenOn?pct(w.readyAtFreeze,w.plannedAtFreeze):null};}
+export function metrics(s:State,w:Week){const saved=w.status==='closed'&&w.performance?.version===1?w.performance.weekly:undefined,total=saved?.total??w.commitments.length,done=saved?.done??w.commitments.filter(c=>commitmentOutcome(s,w,c).ppcMet).length;return {total,done,ppc:saved?saved.ppc:pct(done,total),ta:pct(w.commitments.filter(c=>c.anticipated).length,w.commitments.length),tmr:w.frozenOn?pct(w.readyAtFreeze,w.plannedAtFreeze):null};}
 function reserved(s:State,taskId:string,except?:string){return sum(s.weeks.filter(w=>w.status!=='closed').flatMap(w=>w.commitments).filter(c=>c.taskId===taskId&&c.id!==except).map(c=>Math.max(0,(scaled(c.quantity)-scaled(commitmentActual(s,c)))/1000)))}
 export function available(s:State,t:Task){return (scaled(remaining(s,t))-scaled(reserved(s,t.id)))/1000;}
 // Use the same eligibility rules for the planning controls and deliberate no-work weeks.
@@ -405,6 +460,9 @@ export function applyCommand(input:State,raw:unknown,now=today()):State{
   w.ppcRule='weekly';
   w.status='closed';
   w.closedOn=now;
+  const {total,done,ppc}=metrics(s,w);
+  const daily=dailyPpcSeries(s,w),shortfalls=dailyShortfalls(s,w,daily);
+  w.performance={version:1,weekly:{total,done,ppc},daily,shortfalls};
   break;
  }
  }

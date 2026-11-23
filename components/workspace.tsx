@@ -17,6 +17,7 @@ import {DailyClassroom} from './daily-classroom';
 import InstituteLogos from './institute-logos';
 import {PpcTrend,ReasonPie} from './metrics-charts';
 import {dailyPpcSeries} from '@/lib/daily-ppc';
+import {DailyPpcReview,DailyReasonInsights} from './performance-review';
 
 type User={id:string;email:string;name:string;emailVerified?:boolean};
 type Project={id:string;name:string;version:number;role:string};
@@ -336,7 +337,9 @@ function Closeout({state,week,weekKey,canEdit,busy,confirm}:{
      </div>}
     </section>;
    })}
-   {active&&<div className="closefooter"><p><Lock size={15}/> You can close a practice week as soon as you have recorded its results. Saving locks the week and updates trends.</p>
+   <DailyPpcReview state={state} week={week} compact/>
+   <DailyReasonInsights state={state} weeks={[week]}/>
+   {active&&<div className="closefooter"><p><Lock size={15}/> You can close a practice week as soon as you have recorded its results. Saving locks daily and weekly PPC, daily shortfall reasons, and the weekly primary reasons. It also updates trends.</p>
     <button className="primary" disabled={!canEdit||busy}><Lock size={15}/>Close week</button>
    </div>}
   </form>}
@@ -373,13 +376,9 @@ function Analytics({s,week}:{s:State;week?:Week}){
     <tbody>{series.map(row=><tr key={row.record.key}><td>{row.record.key}</td><td>{row.total}</td><td>{row.done}</td><td>{row.total-row.done}</td><td>{row.ppc===null?'—':row.ppc+'%'}</td><td>{weeklyPpcRule(row.record)?'Weekly quantity':'Historical due date'}</td></tr>)}</tbody>
    </table></div>:<p className="pad muted">No closed weekly results.</p>}
   </Panel>
-  <Panel title="Daily PPC for the selected week" detail={week?dateRange(week.key)+' · Activity targets achieved each day, separate from weekly PPC':'Select a week to review daily performance.'}>
-   {week&&week.commitments.length?<>
-    <PpcTrend points={daily.map(day=>({week:day.date,label:df(day.date),ppc:day.ppc}))} label="Daily PPC for the seven-day project week; pending and no-work days have no score"/>
-    <p className="dailyppcexplanation">Daily PPC = achieved daily activity targets ÷ eligible daily activity targets × 100. Each activity counts once, regardless of quantity or unit. Targets completed on earlier days and zero-plan days are excluded. Finishing the remaining committed scope also achieves the day’s target. Unsaved entries stay pending while the week is active; missing planned entries count as misses once it is closed. A dash means no score, not zero.</p>
-    <div className="tablewrap"><table aria-label="Daily PPC results"><thead><tr><th>Day / date</th><th>Eligible targets</th><th>Achieved</th><th>Missed</th><th>Awaiting entry</th><th>Completed earlier</th><th>Daily PPC</th><th>Status</th></tr></thead><tbody>{daily.map((day,i)=><tr key={day.date}><td>Day {i+1}<small>{df(day.date)}</small></td><td>{day.total}</td><td>{day.done}</td><td>{day.missed}</td><td>{day.pending}</td><td>{day.excluded}</td><td><strong>{day.ppc===null?'—':day.ppc+'%'}</strong></td><td><Badge tone={day.status==='complete'?(day.missed?'amber':'teal'):'neutral'}>{day.status==='not-started'?'Week not started':day.status==='no-work'?'No eligible targets':day.status==='pending'?'Awaiting entries':week.status==='closed'?'Locked':'Saved'}</Badge></td></tr>)}</tbody></table></div>
-   </>:<p className="pad muted">Daily PPC appears after activities are committed to the week.</p>}
-  </Panel>
+  <DailyPpcReview state={s} week={week}/>
+  <DailyReasonInsights state={s} weeks={week?[week]:[]}/>
+  <DailyReasonInsights state={s} weeks={closed} group="week" title="Daily shortfall reason trends · closed weeks"/>
   <Panel title="Activity results for the selected week" detail={week?.status==='closed'?'Final results for '+dateRange(week.key):'Each commitment receives 100% when the weekly quantity is achieved and 0% when incomplete. Delays are recorded separately.'}>
    {week?.commitments.length?<div className="tablewrap"><table><thead><tr><th>Activity</th><th>Due</th><th>Promised</th><th>Actual by due</th><th>Week actual</th><th>Result</th><th>Reason</th></tr></thead>
     <tbody>{week.commitments.map(c=>{
@@ -394,7 +393,7 @@ function Analytics({s,week}:{s:State;week?:Week}){
    <Panel title="Daily reasoning for the selected week" detail="Compare each saved day’s target, actual and daily result alongside its reason.">
    {week&&s.entries.some(e=>week.commitments.some(c=>c.id===e.commitmentId))?<div className="tablewrap"><table><thead><tr><th>Date</th><th>Activity</th><th>Daily plan</th><th>Daily actual</th><th>Daily PPC result</th><th>Reason</th><th>Note</th></tr></thead><tbody>{s.entries.filter(e=>week.commitments.some(c=>c.id===e.commitmentId)).sort((a,b)=>a.date.localeCompare(b.date)||a.commitmentId.localeCompare(b.commitmentId)).map(e=>{const c=week.commitments.find(c=>c.id===e.commitmentId)!,t=findTask(s,c.taskId),planned=dailyCommitmentPlan(t,week.key,c).days.find(d=>d.date===e.date)?.quantity??0,shortfall=dailyReasonRequired(s,week,c,e.date,e.quantity),result=daily.find(day=>day.date===e.date)?.activities.find(a=>a.commitmentId===c.id);return <tr key={e.commitmentId+e.date}><td>{df(e.date)}</td><td>{t.name}</td><td>{fmt(planned)} {t.unit}</td><td>{fmt(e.quantity)} {t.unit}</td><td>{result?.status==='achieved'?'Achieved':result?.status==='missed'?'Missed':result?.status==='completed-earlier'?'Excluded — completed earlier':'Excluded — no daily target'}</td><td>{reasonCode(e.reason??'')?reasonLabel(e.reason!):shortfall?'Shortfall reason missing (earlier entry)':Math.round(e.quantity*1000)<Math.round(planned*1000)?'Not required — completed earlier':'Not required — daily target met'}</td><td>{e.note||'—'}</td></tr>;})}</tbody></table></div>:<p className="pad muted">Daily entries will appear here when saved.</p>}
   </Panel>
-   <Panel title="Reasons for delays and incomplete work" detail="One primary reason per delayed or incomplete commitment. A delay can occur even when weekly PPC is achieved.">
+   <Panel title="Weekly primary reasons · closed weeks" detail="One closeout primary reason per delayed or incomplete weekly commitment. Daily check-in reasons are analysed separately above.">
     {ranked.length?<ReasonPie rows={ranked}/>:<p className="pad muted">No reasons recorded in closed weeks.</p>}
    </Panel>
   <Panel title="Cumulative quantities by unit">
@@ -409,7 +408,7 @@ function Analytics({s,week}:{s:State;week?:Week}){
    </div>))}
    {!ranked.length&&<p className="pad muted">Actions appear here after closeout.</p>}
   </Panel>
-   <Panel title="Top 3 reason codes" detail="Ranked by frequency across closed weeks.">
+   <Panel title="Top 3 weekly primary reasons" detail="Ranked by closeout reason frequency across closed weeks.">
     {ranked.length?<div className="tablewrap"><table><thead><tr><th>Reason</th><th>Misses</th><th>Share</th></tr></thead>
      <tbody>{ranked.slice(0,3).map(row=><tr key={row.code}><td>{row.label}</td><td>{row.count}</td><td>{pct(row.count,reasonTotal)}%</td></tr>)}</tbody>
     </table></div>:<p className="pad muted">No delays or incomplete commitments to rank yet.</p>}

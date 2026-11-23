@@ -31,7 +31,7 @@ export function PpcTrend({points,label='Weekly PPC for closed weeks, with an 80 
   </div>;
 }
 
-export function ReasonPie({rows}:{rows:{code:string;label:string;count:number}[]}){
+export function ReasonPie({rows,label='Weekly primary reasons'}:{rows:{code:string;label:string;count:number}[];label?:string}){
   const total = rows.reduce((sum,row)=>sum+row.count,0);
   let offset = 0;
   const segments = rows.map((row,i)=>{
@@ -41,8 +41,15 @@ export function ReasonPie({rows}:{rows:{code:string;label:string;count:number}[]
   });
   return <div className="reasonpie">
     <div className="piechart" aria-hidden="true" style={{background:'conic-gradient('+segments.join(',')+')'}}/>
-    <ul aria-label="Reasons for missed promises">
+    <ul aria-label={label}>
       {rows.map((row,i)=><li key={row.code}><i style={{background:chartColors[i%chartColors.length]}}/><span>{row.label}</span><strong>{row.count} · {(row.count/total*100).toFixed(1)}%</strong></li>)}
     </ul>
   </div>;
+}
+
+export function ReasonFrequencyTrend({rows,periods,label}:{rows:{code:string;label:string}[];periods:{key:string;label:string;total:number;missing:number;byCode:Record<string,number>}[];label:string}){
+ const max=Math.max(1,...periods.map(p=>p.total));
+ return <div className="reasonfrequency" role="img" aria-label={label+'. Bar lengths show numbers of activity/day shortfalls; exact counts are in the table below.'}>
+  {periods.map(period=><div className="reasonfrequencyrow" key={period.key}><span>{period.label}</span><div className="reasonfrequencytrack">{rows.map((row,i)=>period.byCode[row.code]?<i key={row.code} style={{width:period.byCode[row.code]/max*100+'%',background:chartColors[i%chartColors.length]}} title={row.label+': '+period.byCode[row.code]}/>:null)}{period.missing>0&&<i style={{width:period.missing/max*100+'%',background:'var(--subtle)'}} title={'Reason missing: '+period.missing}/>}</div><strong>{period.total}</strong></div>)}
+ </div>;
 }
