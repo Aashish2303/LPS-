@@ -90,7 +90,7 @@ html{scroll-behavior:auto}.forecastcard{content-visibility:auto;contain-intrinsi
 
 /* Give institute wordmarks a readable size without compressing the sidebar. */
 .institutelogos img{height:60px;max-width:225px;width:auto;object-fit:contain;background:var(--surface);padding:5px 7px;border:1px solid var(--border);border-radius:6px}
-.institutelogos.compact{flex-direction:column;align-items:flex-start;gap:10px;margin-top:20px}
-.institutelogos.compact img{height:48px;max-width:100%;padding:4px 6px}
+.institutelogos.compact{flex-direction:column;align-items:flex-start;gap:10px;margin-top:20px;width:194px;max-width:100%}
+.institutelogos.compact img{width:100%;height:auto;max-width:none;padding:4px 6px}
 @media(max-width:650px){.institutelogos:not(.compact) img{height:50px;max-width:200px}}
 @media print{.institutelogos img{border:0}}
