@@ -95,6 +95,6 @@ html{scroll-behavior:auto}.forecastcard{content-visibility:auto;contain-intrinsi
 @media(max-width:650px){.institutelogos:not(.compact) img{height:50px;max-width:200px}}
 @media print{.institutelogos img{border:0}}
 
-/* Emblem viewport excludes the IITM wordmark without stretching the artwork. */
-.institutelogos .iitmemblem{display:block;flex:none;width:88px;height:88px;overflow:hidden}
-.institutelogos.compact .iitmemblem{width:112px;height:112px;align-self:center}
+/* Keep the complete supplied SVG visible, with room around its outer edge. */
+.institutelogos img.iitmemblem{display:block;flex:none;width:88px;height:88px;max-width:100%;object-fit:contain;padding:3px;border:0;border-radius:0;background:transparent}
+.institutelogos.compact img.iitmemblem{width:112px;height:112px;align-self:center}
